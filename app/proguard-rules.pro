@@ -1,0 +1,3 @@
+-keep class com.kidlink.beacon.** { *; }
+-keep class com.google.zxing.** { *; }
+-keep class com.google.mlkit.** { *; }

@@ -1,0 +1,354 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  首页：最多显示三个信标，等比均分高度。
+  · 只选一个 → 占满整个区域（图标大一些、位置偏上，和之前一样）
+  · 选两个   → 上下各一半
+  · 选三个   → 三等分，图标和字号自动缩小一档（MainActivity.applyPanelLayout）
+  每块内部的控件高度全部写死，切换可见性不会引起纵向跳动。
+-->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/bg_main">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:background="@color/bg_main">
+
+        <com.google.android.material.appbar.MaterialToolbar
+            android:id="@+id/toolbar"
+            android:layout_width="match_parent"
+            android:layout_height="?attr/actionBarSize"
+            android:background="@color/primary"
+            app:contentInsetStart="0dp"
+            app:menu="@menu/menu_main">
+
+            <!-- 点标题进设置 -->
+            <TextView
+                android:id="@+id/txt_title"
+                android:layout_width="wrap_content"
+                android:layout_height="match_parent"
+                android:gravity="center_vertical"
+                android:paddingStart="20dp"
+                android:paddingEnd="16dp"
+                android:text="@string/app_name"
+                android:textColor="@color/white"
+                android:textSize="19sp"
+                android:textStyle="bold"
+                android:background="?attr/selectableItemBackground" />
+        </com.google.android.material.appbar.MaterialToolbar>
+
+        <LinearLayout
+            android:id="@+id/layout_status"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:orientation="vertical">
+
+            <!-- ================= 第一块（上） ================= -->
+            <LinearLayout
+                android:id="@+id/panel_1"
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="1"
+                android:orientation="vertical"
+                android:gravity="center"
+                android:paddingStart="24dp"
+                android:paddingEnd="24dp"
+                android:paddingBottom="150dp">
+
+                <FrameLayout
+                    android:id="@+id/circle_container"
+                    android:layout_width="140dp"
+                    android:layout_height="140dp">
+
+                    <View
+                        android:id="@+id/circle_bg"
+                        android:layout_width="match_parent"
+                        android:layout_height="match_parent"
+                        android:background="@drawable/bg_circle_gray" />
+
+                    <ImageView
+                        android:id="@+id/img_beacon"
+                        android:layout_width="52dp"
+                        android:layout_height="52dp"
+                        android:layout_gravity="center"
+                        android:src="@drawable/ic_beacon"
+                        android:contentDescription="@string/app_name"
+                        app:tint="@color/white" />
+                </FrameLayout>
+
+                <TextView
+                    android:id="@+id/txt_beacon_name"
+                    android:layout_width="match_parent"
+                    android:layout_height="28dp"
+                    android:layout_marginTop="18dp"
+                    android:gravity="center"
+                    android:maxLines="1"
+                    android:ellipsize="end"
+                    android:textSize="19sp"
+                    android:textStyle="bold"
+                    android:textColor="@color/text_primary" />
+
+                <TextView
+                    android:id="@+id/txt_distance"
+                    android:layout_width="match_parent"
+                    android:layout_height="42dp"
+                    android:layout_marginTop="2dp"
+                    android:gravity="center"
+                    android:textSize="30sp"
+                    android:textStyle="bold"
+                    android:textColor="@color/primary"
+                    android:visibility="invisible" />
+
+                <LinearLayout
+                    android:id="@+id/row_signal"
+                    android:layout_width="match_parent"
+                    android:layout_height="20dp"
+                    android:layout_marginTop="2dp"
+                    android:orientation="horizontal"
+                    android:gravity="center"
+                    android:visibility="invisible">
+
+                    <ImageView
+                        android:layout_width="14dp"
+                        android:layout_height="14dp"
+                        android:src="@drawable/ic_signal_bars"
+                        android:contentDescription="@string/app_name"
+                        app:tint="@color/text_secondary" />
+
+                    <TextView
+                        android:id="@+id/txt_rssi"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="6dp"
+                        android:textSize="13sp"
+                        android:textColor="@color/text_secondary" />
+                </LinearLayout>
+
+                <TextView
+                    android:id="@+id/txt_state"
+                    android:layout_width="match_parent"
+                    android:layout_height="36dp"
+                    android:layout_marginTop="2dp"
+                    android:gravity="center"
+                    android:textSize="13sp"
+                    android:textColor="@color/text_secondary"
+                    android:lineSpacingExtra="2dp"
+                    android:text="@string/no_beacon_selected" />
+            </LinearLayout>
+
+            <View
+                android:id="@+id/divider_h"
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:layout_marginStart="40dp"
+                android:layout_marginEnd="40dp"
+                android:background="@color/divider"
+                android:visibility="gone" />
+
+            <!-- ================= 第二块（下） ================= -->
+            <LinearLayout
+                android:id="@+id/panel_2"
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="1"
+                android:orientation="vertical"
+                android:gravity="center"
+                android:paddingStart="24dp"
+                android:paddingEnd="24dp"
+                android:paddingBottom="150dp"
+                android:visibility="gone">
+
+                <FrameLayout
+                    android:id="@+id/circle_container_2"
+                    android:layout_width="140dp"
+                    android:layout_height="140dp">
+
+                    <View
+                        android:id="@+id/circle_bg_2"
+                        android:layout_width="match_parent"
+                        android:layout_height="match_parent"
+                        android:background="@drawable/bg_circle_gray" />
+
+                    <ImageView
+                        android:id="@+id/img_beacon_2"
+                        android:layout_width="52dp"
+                        android:layout_height="52dp"
+                        android:layout_gravity="center"
+                        android:src="@drawable/ic_beacon"
+                        android:contentDescription="@string/app_name"
+                        app:tint="@color/white" />
+                </FrameLayout>
+
+                <TextView
+                    android:id="@+id/txt_beacon_name_2"
+                    android:layout_width="match_parent"
+                    android:layout_height="28dp"
+                    android:layout_marginTop="18dp"
+                    android:gravity="center"
+                    android:maxLines="1"
+                    android:ellipsize="end"
+                    android:textSize="19sp"
+                    android:textStyle="bold"
+                    android:textColor="@color/text_primary" />
+
+                <TextView
+                    android:id="@+id/txt_distance_2"
+                    android:layout_width="match_parent"
+                    android:layout_height="42dp"
+                    android:layout_marginTop="2dp"
+                    android:gravity="center"
+                    android:textSize="30sp"
+                    android:textStyle="bold"
+                    android:textColor="@color/primary"
+                    android:visibility="invisible" />
+
+                <LinearLayout
+                    android:id="@+id/row_signal_2"
+                    android:layout_width="match_parent"
+                    android:layout_height="20dp"
+                    android:layout_marginTop="2dp"
+                    android:orientation="horizontal"
+                    android:gravity="center"
+                    android:visibility="invisible">
+
+                    <ImageView
+                        android:layout_width="14dp"
+                        android:layout_height="14dp"
+                        android:src="@drawable/ic_signal_bars"
+                        android:contentDescription="@string/app_name"
+                        app:tint="@color/text_secondary" />
+
+                    <TextView
+                        android:id="@+id/txt_rssi_2"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="6dp"
+                        android:textSize="13sp"
+                        android:textColor="@color/text_secondary" />
+                </LinearLayout>
+
+                <TextView
+                    android:id="@+id/txt_state_2"
+                    android:layout_width="match_parent"
+                    android:layout_height="36dp"
+                    android:layout_marginTop="2dp"
+                    android:gravity="center"
+                    android:textSize="13sp"
+                    android:textColor="@color/text_secondary"
+                    android:lineSpacingExtra="2dp" />
+            </LinearLayout>
+
+            <View
+                android:id="@+id/divider_h_2"
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:layout_marginStart="40dp"
+                android:layout_marginEnd="40dp"
+                android:background="@color/divider"
+                android:visibility="gone" />
+
+            <!-- ================= 第三块（三个信标时才有） ================= -->
+            <LinearLayout
+                android:id="@+id/panel_3"
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="1"
+                android:orientation="vertical"
+                android:gravity="center"
+                android:paddingStart="24dp"
+                android:paddingEnd="24dp"
+                android:paddingBottom="150dp"
+                android:visibility="gone">
+
+                <FrameLayout
+                    android:id="@+id/circle_container_3"
+                    android:layout_width="140dp"
+                    android:layout_height="140dp">
+
+                    <View
+                        android:id="@+id/circle_bg_3"
+                        android:layout_width="match_parent"
+                        android:layout_height="match_parent"
+                        android:background="@drawable/bg_circle_gray" />
+
+                    <ImageView
+                        android:id="@+id/img_beacon_3"
+                        android:layout_width="52dp"
+                        android:layout_height="52dp"
+                        android:layout_gravity="center"
+                        android:src="@drawable/ic_beacon"
+                        android:contentDescription="@string/app_name"
+                        app:tint="@color/white" />
+                </FrameLayout>
+
+                <TextView
+                    android:id="@+id/txt_beacon_name_3"
+                    android:layout_width="match_parent"
+                    android:layout_height="28dp"
+                    android:layout_marginTop="18dp"
+                    android:gravity="center"
+                    android:maxLines="1"
+                    android:ellipsize="end"
+                    android:textSize="19sp"
+                    android:textStyle="bold"
+                    android:textColor="@color/text_primary" />
+
+                <TextView
+                    android:id="@+id/txt_distance_3"
+                    android:layout_width="match_parent"
+                    android:layout_height="42dp"
+                    android:layout_marginTop="2dp"
+                    android:gravity="center"
+                    android:textSize="30sp"
+                    android:textStyle="bold"
+                    android:textColor="@color/primary"
+                    android:visibility="invisible" />
+
+                <LinearLayout
+                    android:id="@+id/row_signal_3"
+                    android:layout_width="match_parent"
+                    android:layout_height="20dp"
+                    android:layout_marginTop="2dp"
+                    android:orientation="horizontal"
+                    android:gravity="center"
+                    android:visibility="invisible">
+
+                    <ImageView
+                        android:layout_width="14dp"
+                        android:layout_height="14dp"
+                        android:src="@drawable/ic_signal_bars"
+                        android:contentDescription="@string/app_name"
+                        app:tint="@color/text_secondary" />
+
+                    <TextView
+                        android:id="@+id/txt_rssi_3"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="6dp"
+                        android:textSize="13sp"
+                        android:textColor="@color/text_secondary" />
+                </LinearLayout>
+
+                <TextView
+                    android:id="@+id/txt_state_3"
+                    android:layout_width="match_parent"
+                    android:layout_height="36dp"
+                    android:layout_marginTop="2dp"
+                    android:gravity="center"
+                    android:textSize="13sp"
+                    android:textColor="@color/text_secondary"
+                    android:lineSpacingExtra="2dp" />
+            </LinearLayout>
+
+        </LinearLayout>
+    </LinearLayout>
+
+    <!-- 前台「轻提醒」不再用这里的浮条：直接用 Feedback，
+         位置/外观和「保存配置」那条提示完全一致（底部居中胶囊）。 -->
+
+</FrameLayout>

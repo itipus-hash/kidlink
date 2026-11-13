@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="@color/bg_main">
+
+    <com.google.android.material.appbar.MaterialToolbar
+        android:id="@+id/toolbar"
+        android:layout_width="match_parent"
+        android:layout_height="?attr/actionBarSize"
+        android:background="@color/primary"
+        app:titleTextColor="@color/white"
+        app:navigationIcon="@drawable/ic_back" />
+
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:padding="16dp"
+            android:gravity="center">
+
+            <!-- 信标名称 -->
+            <TextView
+                android:id="@+id/txt_name"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                style="@style/TextTitle" />
+
+            <!-- 二维码图 -->
+            <ImageView
+                android:id="@+id/img_qr"
+                android:layout_width="280dp"
+                android:layout_height="280dp"
+                android:layout_marginTop="16dp"
+                android:background="@color/white"
+                android:padding="8dp"
+                android:contentDescription="@string/qr_share_title" />
+
+            <TextView
+                android:id="@+id/txt_hint"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:gravity="center"
+                android:lineSpacingExtra="3dp"
+                style="@style/TextCaption"
+                android:text="@string/qr_share_hint" />
+
+            <!-- 分享按钮 -->
+            <Button
+                android:id="@+id/btn_share"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="24dp"
+                style="@style/PrimaryButton"
+                android:text="@string/share_action"
+                android:visibility="gone" />
+
+            <!-- 保存按钮 -->
+            <Button
+                android:id="@+id/btn_save"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                style="@style/PrimaryButton"
+                android:text="@string/save_to_gallery" />
+
+        </LinearLayout>
+    </ScrollView>
+
+</LinearLayout>

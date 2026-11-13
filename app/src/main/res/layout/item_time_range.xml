@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 一个时间段：开始 - 结束，右边删除 -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="horizontal"
+    android:gravity="center_vertical"
+    android:paddingStart="20dp"
+    android:paddingEnd="20dp"
+    android:paddingTop="10dp"
+    android:paddingBottom="10dp">
+
+    <TextView
+        android:id="@+id/txt_range_start"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:paddingTop="6dp"
+        android:paddingBottom="6dp"
+        android:paddingStart="10dp"
+        android:paddingEnd="10dp"
+        android:background="?attr/selectableItemBackground"
+        android:textColor="@color/primary"
+        android:textSize="17sp"
+        android:textStyle="bold" />
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="—"
+        android:textColor="@color/text_secondary"
+        android:textSize="15sp" />
+
+    <TextView
+        android:id="@+id/txt_range_end"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:paddingTop="6dp"
+        android:paddingBottom="6dp"
+        android:paddingStart="10dp"
+        android:paddingEnd="10dp"
+        android:background="?attr/selectableItemBackground"
+        android:textColor="@color/primary"
+        android:textSize="17sp"
+        android:textStyle="bold" />
+
+    <Space
+        android:layout_width="0dp"
+        android:layout_height="1dp"
+        android:layout_weight="1" />
+
+    <TextView
+        android:id="@+id/btn_range_delete"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:paddingStart="12dp"
+        android:paddingEnd="4dp"
+        android:paddingTop="8dp"
+        android:paddingBottom="8dp"
+        android:background="?attr/selectableItemBackground"
+        android:text="@string/delete"
+        android:textColor="@color/danger"
+        android:textSize="13sp" />
+
+</LinearLayout>

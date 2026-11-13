@@ -1,0 +1,292 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">接娃助手</string>
+
+    <!-- Main -->
+    <string name="search_hint">搜索名称/UUID/Major/Minor</string>
+    <string name="no_beacons">暂无信标标签\n点击右上角 + 扫码导入或手动新增</string>
+    <string name="add_beacon">添加信标</string>
+    <string name="scan_import">扫码导入</string>
+    <string name="manual_add">手动新增</string>
+    <string name="manage_beacons">信标管理</string>
+    <string name="no_beacon_tip">还没有添加蓝牙信标，点右上角图标添加一个</string>
+    <string name="no_beacon_selected">未选择任何信标\n点右上角图标进入信标管理</string>
+
+    <!-- Beacon manager -->
+    <string name="beacon_manager_title">蓝牙信标</string>
+    <string name="beacon_manager_hint">点击选中 / 再点取消（最多 3 个，至少 1 个）\n长按查看信标信息 · 按住卡片滑动可排序</string>
+    <string name="add_beacon_hint">扫描或扫码</string>
+    <string name="add_by_ble">蓝牙扫描附近信标</string>
+    <string name="add_by_qr">扫描二维码导入</string>
+    <string name="drag_to_sort">拖动排序</string>
+    <string name="tag_current">当前</string>
+    <string name="tag_calibrated">已标定</string>
+    <string name="selected_toast">已选中「%s」</string>
+    <string name="unselected_toast">已取消「%s」</string>
+    <string name="select_limit_reached">最多同时选中 %d 个信标</string>
+    <string name="keep_one_selected">至少要保留一个信标选中</string>
+    <string name="deleted_toast">已删除「%s」</string>
+
+    <!-- Manager long press menu -->
+    <string name="menu_rename">自定义名称</string>
+    <string name="menu_delete">删除信标</string>
+
+    <!-- 信标信息 -->
+    <string name="beacon_info_title">信标信息</string>
+    <string name="info_uuid">UUID</string>
+    <string name="info_major_minor">Major / Minor / 蓝牙地址</string>
+    <string name="info_mac_short_none">未记录</string>
+    <string name="info_push_state">上次推送 / 推送冷却</string>
+    <string name="info_last_push_none">从未推送</string>
+    <string name="info_cooldown_ready">不在冷却中</string>
+    <string name="info_cooldown_left">还剩 %s</string>
+    <string name="info_clear_cooldown">清除冷却</string>
+    <string name="cooldown_reset_done">「%s」的推送冷却已清除</string>
+    <string name="cooldown_none">「%s」本来就不在冷却中</string>
+
+    <string name="rename_title">自定义名称</string>
+    <string name="rename_hint">信标名称</string>
+    <string name="rename_empty">名称不能为空</string>
+
+    <!-- Calibration -->
+    <string name="detect_settings_title">检测设置</string>
+    <string name="settings_title">设置</string>
+    <string name="settings_picker">当前接娃人</string>
+    <string name="picker_dialog_title">接娃人</string>
+    <string name="settings_push_token">PushPlus Token</string>
+    <string name="settings_not_set">未填写</string>
+    <string name="settings_push_hint">填好接娃人和 Token 后，第一次进入推送距离以内会推送一条通知，例如「奶奶在23:11接到许小鱼！」。\n冷却时间内不会重复推，两个信标各算各的冷却。\n可以加多条通道，同时推给爸爸、妈妈。</string>
+    <string name="settings_push_cooldown">推送冷却</string>
+    <string name="push_cooldown_item">当前 %s</string>
+    <string name="push_cooldown_hint">两次推送之间至少间隔这么久，单位小时，可以填小数（0.5 = 30 分钟）。</string>
+    <string name="push_cooldown_invalid">请输入 0.1 ~ 24 之间的小时数</string>
+    <string name="minutes_value">%d 分钟</string>
+    <string name="hours_value">%d 小时</string>
+    <string name="hours_value_float">%.1f 小时</string>
+    <string name="picker_dialog_hint">例如：奶奶、妈妈、爸爸</string>
+    <string name="token_dialog_hint">粘贴 PushPlus Token</string>
+    <string name="picker_empty">接娃人不能为空</string>
+
+    <!-- PushPlus 通道列表 -->
+    <string name="token_add">＋ 添加 PushPlus Token</string>
+    <string name="token_register">还没有账号？点这里去 pushplus.plus 注册</string>
+    <string name="token_register_failed">没有可以打开的浏览器</string>
+    <string name="token_empty_hint">还没有推送通道，点下面的按钮添加一条。\n可以加多个，比如爸爸一个、妈妈一个，同时推。</string>
+    <string name="token_name_hint">自定义名称，例如：爸爸</string>
+    <string name="token_state_on">推送中</string>
+    <string name="token_state_off">已关闭</string>
+    <string name="token_add_title">添加 PushPlus Token</string>
+    <string name="token_edit_title">修改推送通道</string>
+    <string name="token_blank">Token 不能为空</string>
+    <string name="token_duplicate">这条 Token 已经添加过了</string>
+    <string name="token_default_name">通道 %d</string>
+    <string name="token_switched_on">向%s推送提醒</string>
+    <string name="token_switched_off">不再推送提醒给%s</string>
+    <string name="token_delete_title">删除推送通道</string>
+    <string name="token_delete_message">确定删除「%s」？删除后这条不会再收到推送。</string>
+    <string name="token_deleted">已删除</string>
+    <string name="delete">删除</string>
+    <string name="arrive_push_message">%1$s接到%2$s了</string>
+    <string name="push_failed">推送失败：%s</string>
+    <string name="detect_interval_item">当前 %d 秒</string>
+    <string name="detect_interval_title">图标颜色超时时间</string>
+    <string name="detect_interval_hint">超过这么多秒一次都没收到广播，图标才变回灰色。\n设大一点，信号偶尔断开也不会误报。</string>
+    <string name="detect_interval_invalid">请输入 1 ~ 600 之间的秒数</string>
+    <string name="near_distance_item">当前 %d 米</string>
+    <string name="near_distance_title">图标变色触发距离</string>
+    <string name="near_distance_hint">进入这个距离以内，图标才变绿；\n超出时即使有信号，也只显示绿色的距离数字。</string>
+    <string name="near_distance_invalid">请输入 1 ~ 100 之间的米数</string>
+    <string name="detect_setting_saved">已保存</string>
+
+    <!-- 开关 / 选择项 -->
+    <string name="settings_front_tip">悬浮提醒触发距离</string>
+    <string name="front_tip_item">当前 %d 米</string>
+    <string name="front_tip_hint">填 0 表示关闭。填几，就走进几米内时在底部提示一条，例如「许小鱼已进入 10 米内」。\n建议填得比「图标变色触发距离」大一点，这样可以先看到提示再看到变绿。</string>
+    <string name="front_tip_invalid">请输入 0 ~ 100 之间的米数（0 = 关闭）</string>
+    <string name="near_tip_format">%1$s已进入 %2$d 米内</string>
+
+    <!-- 分享 / 接收配置 -->
+    <string name="settings_share_action">分享配置</string>
+    <string name="settings_receive_action">接收配置</string>
+    <string name="settings_share_dialog_title">分享 / 接收配置</string>
+    <string name="settings_share_title">分享配置</string>
+    <string name="settings_share_name">接娃助手 · 全部设置</string>
+    <string name="settings_share_hint">用另一台手机的接娃助手 → 设置 → 右上角 → 接收配置，扫这个码即可同步。\n包含推送、距离、震动等全部设置，不含接娃人。</string>
+    <string name="settings_scan_title">接收配置</string>
+    <string name="settings_import_ok">配置已导入</string>
+    <string name="settings_qr_version_mismatch">版本不兼容（对方 v%1$d，本机 v%2$d）</string>
+    <string name="settings_qr_invalid">不是接娃助手的配置码</string>
+    <string name="qr_generate_failed">二维码生成失败</string>
+    <string name="settings_push_group">消息推送设置</string>
+    <string name="near_group">界面提醒设置</string>
+    <string name="system_group">系统设置</string>
+    <string name="settings_exit_after">接送成功后退出APP</string>
+    <string name="pushed_to">已推送消息给%1$s</string>
+    <string name="chevron_collapsed">▸</string>
+    <string name="chevron_expanded">▾</string>
+    <string name="settings_vibrate">图标变色时震动提醒</string>
+    <string name="settings_push_distance">接送成功推送</string>
+    <string name="push_distance_item">当前 %d 米</string>
+    <string name="push_distance_hint">第一次进到这个距离以内，推一条「已接到」的通知。\n单位米，可以填 1 ~ 100。</string>
+    <string name="push_distance_invalid">请输入 1 ~ 100 之间的米数</string>
+    <string name="settings_approach">近距离推送</string>
+    <string name="approach_item">当前 %d 米</string>
+    <string name="approach_hint">第一次进到这个距离以内，推一条「已靠近」的通知，例如「奶奶已靠近许小鱼，18.3米。」。\n填 0 表示关闭。\n建议填得比「接送成功推送」大，这样先收到近距离推送、再收到接到提醒。</string>
+    <string name="approach_invalid">请输入 0 ~ 200 之间的米数（0 = 关闭）</string>
+    <string name="approach_push_message">%1$s距离%2$s还有%3$s米</string>
+
+    <!-- 时间段类型（上学 / 放学 / 自定义） -->
+    <string name="time_group_empty">还没有时间段类型，点下面添加。\n比如「上学」「放学」，也可以加自己的，像「兴趣班」。</string>
+    <string name="time_group_add">＋ 添加时间段类型</string>
+    <string name="time_group_name_hint">名称，例如：上学</string>
+    <string name="time_group_days_hint">哪些天推送（全都不选 = 不推送）</string>
+    <string name="time_group_delete">删除这个类型</string>
+    <string name="time_group_name_empty">名称不能为空</string>
+    <string name="time_group_default_name">类型 %d</string>
+    <string name="time_not_set">未设置</string>
+    <string name="time_range_add">＋ 添加时间段</string>
+    <string name="time_range_empty">还没有时间段，点下面添加</string>
+    <string name="time_range_hint">在哪个时间段内推到「接送成功推送」距离，就用这个类型的名字推送。\n点开始 / 结束改时间，可以加多段。</string>
+    <string name="clear">清空</string>
+    <string name="day_mon">周一</string>
+    <string name="day_tue">周二</string>
+    <string name="day_wed">周三</string>
+    <string name="day_thu">周四</string>
+    <string name="day_fri">周五</string>
+    <string name="day_sat">周六</string>
+    <string name="day_sun">周日</string>
+    <string name="arrive_typed_message">%1$s接到%2$s了（%3$s）</string>
+    <string name="vibrate_item">当前震 %d 秒</string>
+    <string name="vibrate_off">已关闭</string>
+    <string name="vibrate_choice_off">关闭</string>
+    <string name="vibrate_choice_sec">%d 秒</string>
+    <string name="fg_bg_title">接娃助手正在后台检测</string>
+    <string name="fg_bg_text">离开应用后仍在扫描信标，点此返回</string>
+
+    <string name="calibrate_title">信标标定</string>
+    <string name="calibrate_at">标定 %d 米</string>
+    <string name="calibrate_message">请输入你与信标之间的实际距离，APP 会把该距离与采集到的信号强度配对储存，用于更准确的距离估算。\n\n当前标定：%s</string>
+    <string name="calibrate_none">未标定（默认模型）</string>
+    <string name="calibrate_distance_hint">距离（米）</string>
+    <string name="calibrate_start">开始标定</string>
+    <string name="calibrating">正在采集信号…\n请站在距离信标 %s 米的位置</string>
+    <string name="calibrate_done">标定完成：%s 米 ≈ %d dBm</string>
+    <string name="calibrate_no_signal">未采集到信标信号，请靠近信标后重试</string>
+    <string name="calibrate_reset">清除标定</string>
+    <string name="calibrate_reset_done">已恢复默认距离模型</string>
+    <string name="calibrate_invalid">请输入 0.1 ~ 50 之间的距离</string>
+
+    <!-- Distance status -->
+    <string name="distance_approx">约 %.1f 米</string>
+    <string name="distance_near">1 米内</string>
+    <string name="distance_far">约 %d 米</string>
+    <string name="rssi_value">%d dBm</string>
+    <string name="distance_very_close">就在附近 · %.1f 米</string>
+
+    <!-- BLE scan to add -->
+    <string name="scan_beacon_title">扫描信标</string>
+    <string name="scan_beacon_empty">正在搜索附近的 iBeacon…\n请让信标上电并靠近手机</string>
+    <string name="scan_beacon_none_found">没有发现信标\n请确认信标已上电并在附近</string>
+    <string name="scan_beacon_unknown">未命名信标 %d/%d</string>
+    <string name="scan_beacon_saved">已添加「%s」</string>
+    <string name="scan_beacon_duplicate">该信标已添加过了</string>
+    <string name="scan_state_with_count">正在扫描…  已收到 %d 台设备广播</string>
+    <string name="raw_dump_title">原始广播</string>
+    <string name="raw_dump_empty">还没有收到任何广播，先等两秒再打开</string>
+    <string name="raw_dump_hint">共 %d 台设备，按信号强弱排序。点「复制全部」可以把内容粘给我。</string>
+    <string name="raw_dump_copy">复制全部</string>
+    <string name="raw_dump_copied">已复制到剪贴板</string>
+    <string name="bluetooth_need_on">请先打开蓝牙</string>
+
+    <!-- Beacon card -->
+    <string name="detected">检测到</string>
+    <string name="not_detected">未检测到</string>
+    <string name="distance_format">%.2f m</string>
+    <string name="rssi_format">%d dBm</string>
+    <string name="distance_ref">估算距离，仅作参考</string>
+
+    <!-- Ranging page -->
+    <string name="ranging_title">实时测距</string>
+    <string name="raw_rssi">原始 RSSI</string>
+    <string name="filtered_rssi">滤波 RSSI</string>
+    <string name="estimated_distance">估算距离</string>
+    <string name="tx_power">Tx 发射功率</string>
+    <string name="threshold">报警阈值</string>
+    <string name="within_threshold">已进入提醒范围！</string>
+    <string name="calibrate_1m">1米距离校准</string>
+    <string name="calibrate_hint">站在距离信标1米处，点击按钮采集当前RSSI</string>
+    <string name="calibrate_success">校准成功，RSSI@1m 已更新为 %d dBm</string>
+    <string name="calibrate_fail">未能采集到信标信号，请靠近信标后重试</string>
+    <string name="scanning">正在扫描…</string>
+    <string name="stop_scan">停止扫描</string>
+    <string name="start_scan">开始扫描</string>
+
+    <!-- Raw beacon page -->
+    <string name="raw_title">信标原始广播信息</string>
+    <string name="raw_uuid">UUID</string>
+    <string name="raw_major">Major</string>
+    <string name="raw_minor">Minor</string>
+    <string name="raw_tx">Tx Power</string>
+    <string name="raw_rssi_label">RSSI</string>
+
+    <!-- Detail page -->
+    <string name="detail_title">标签详情</string>
+    <string name="generate_qr">生成分享二维码</string>
+    <string name="edit_beacon">编辑参数</string>
+    <string name="delete_beacon">删除标签</string>
+    <string name="save">保存</string>
+    <string name="cancel">取消</string>
+    <string name="confirm_delete">确定要删除此信标标签吗？</string>
+
+    <!-- Edit -->
+    <string name="edit_title">编辑信标</string>
+    <string name="label_name">标签名称</string>
+    <string name="label_remark">备注</string>
+    <string name="label_uuid">UUID</string>
+    <string name="label_major">Major</string>
+    <string name="label_minor">Minor</string>
+    <string name="label_rssi_1m">RSSI@1m 基准值 (dBm)</string>
+    <string name="label_threshold">触发RSSI阈值 (dBm)</string>
+    <string name="threshold_hint">信号强于此值（距离更近）时触发提醒\n值越大触发距离越近（建议 -70 ~ -60）</string>
+    <string name="uuid_hint">例: B5B182C7-EAB1-4988-AA99-B5C1517008C9</string>
+
+    <!-- QR scan -->
+    <string name="qr_scan_title">扫码导入信标配置</string>
+    <string name="qr_scan_store_title">扫描二维码</string>
+    <string name="flash_on">闪光灯</string>
+    <string name="invalid_qr">不是接娃助手的信标配置码</string>
+    <string name="import_success">导入成功</string>
+    <string name="import_fail">导入失败</string>
+    <string name="qr_store_hint">扫一个现成的二维码存到这个信标上，之后长按即可再次显示</string>
+    <string name="qr_store_success">二维码已储存</string>
+
+    <!-- QR share -->
+    <string name="qr_share_title">信标配置二维码</string>
+    <string name="beacon_qr_title">信标二维码</string>
+    <string name="qr_share_hint">用另一台安装了【接娃助手】的手机扫码即可导入此信标配置</string>
+    <string name="beacon_qr_hint">这是为这个信标储存的二维码，其他 App 扫描即可读取</string>
+    <string name="beacon_qr_empty_hint">还没有为这个信标储存二维码\n长按信标卡片，选「信标二维码」扫一个进来</string>
+    <string name="save_to_gallery">保存到相册</string>
+    <string name="save_success">已保存到相册</string>
+    <string name="save_fail">保存失败</string>
+    <string name="share_action">分享给其他手机</string>
+    <string name="share_chooser">分享信标配置</string>
+
+    <!-- Permissions -->
+    <string name="perm_bluetooth">需要蓝牙权限来扫描信标</string>
+    <string name="perm_camera">需要相机权限来扫描二维码</string>
+    <string name="perm_location">安卓BLE扫描需要位置权限</string>
+    <string name="perm_denied">权限被拒绝，部分功能无法使用</string>
+    <string name="bluetooth_off">蓝牙未开启，请先开启蓝牙</string>
+    <string name="ok">确定</string>
+
+    <!-- Notification -->
+    <string name="fg_channel_name">测距服务</string>
+    <string name="fg_channel_desc">后台蓝牙信标扫描服务</string>
+    <string name="fg_notification_title">接娃助手正在扫描</string>
+    <string name="fg_notification_text">正在监测信标距离…</string>
+
+    <!-- Notification channel -->
+    <string name="alert_channel_name">距离提醒</string>
+    <string name="alert_channel_desc">信标进入设定范围时提醒</string>
+</resources>

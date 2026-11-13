@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    设置页里的一个时间段类型：名称 + 星期/时间摘要，右边一个 ≡ 拖动手柄。
+
+    为什么要有手柄：这个列表在外层 ScrollView 里，如果不划分"责任区"，
+    要么竖滑不能滚页面，要么拖动起不来。手柄吃掉自己的按下事件并禁用父级拦截，
+    行身照旧交给 ScrollView 滚 —— 两边互不打扰。
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:paddingStart="20dp"
+    android:paddingEnd="8dp"
+    android:paddingTop="14dp"
+    android:paddingBottom="8dp"
+    android:background="?attr/selectableItemBackground">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:paddingBottom="6dp">
+
+            <TextView
+                android:id="@+id/txt_group_name"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:maxLines="1"
+                android:ellipsize="end"
+                android:textColor="@color/text_primary"
+                android:textSize="16sp" />
+
+            <TextView
+                android:id="@+id/txt_group_summary"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:textColor="@color/text_secondary"
+                android:textSize="13sp"
+                android:lineSpacingExtra="2dp" />
+        </LinearLayout>
+
+        <!-- 只有这块能拖：按下即拖，不需要长按 -->
+        <ImageView
+            android:id="@+id/drag_handle"
+            android:layout_width="44dp"
+            android:layout_height="48dp"
+            android:paddingStart="12dp"
+            android:paddingEnd="8dp"
+            android:src="@drawable/ic_drag_handle"
+            android:contentDescription="@string/drag_to_sort" />
+    </LinearLayout>
+
+    <!--
+        分隔线画在行内部，不再单独 addView 一条。
+        这样 timeGroupList 的子 View 就是一个行一个，拖动排序时
+        removeView / addView(index) 才能整行（含线）一起搬，不会把线错位。
+    -->
+    <View
+        android:id="@+id/divider_line"
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:background="@color/divider" />
+
+</LinearLayout>

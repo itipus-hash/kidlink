@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 编辑一个时间段类型：名称 + 星期多选 + 时间段列表 -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:paddingTop="8dp">
+
+    <EditText
+        android:id="@+id/edt_group_name"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="24dp"
+        android:layout_marginEnd="24dp"
+        android:singleLine="true"
+        android:hint="@string/time_group_name_hint"
+        android:textSize="16sp" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="24dp"
+        android:layout_marginEnd="24dp"
+        android:layout_marginTop="12dp"
+        android:text="@string/time_group_days_hint"
+        android:textColor="@color/text_secondary"
+        android:textSize="12sp" />
+
+    <com.google.android.material.chip.ChipGroup
+        android:id="@+id/chip_days"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="20dp"
+        android:layout_marginEnd="20dp"
+        android:layout_marginTop="2dp"
+        app:chipSpacingHorizontal="4dp"
+        app:chipSpacingVertical="0dp"
+        app:singleLine="false"
+        app:singleSelection="false" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="24dp"
+        android:layout_marginEnd="24dp"
+        android:layout_marginTop="10dp"
+        android:text="@string/time_range_hint"
+        android:textColor="@color/text_secondary"
+        android:textSize="12sp"
+        android:lineSpacingExtra="3dp" />
+
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:maxHeight="220dp">
+
+        <LinearLayout
+            android:id="@+id/time_range_list"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical" />
+    </ScrollView>
+
+    <TextView
+        android:id="@+id/txt_range_empty"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingStart="24dp"
+        android:paddingEnd="24dp"
+        android:paddingTop="4dp"
+        android:paddingBottom="4dp"
+        android:text="@string/time_range_empty"
+        android:textColor="@color/text_secondary"
+        android:textSize="13sp" />
+
+    <TextView
+        android:id="@+id/btn_add_range"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingStart="24dp"
+        android:paddingEnd="24dp"
+        android:paddingTop="10dp"
+        android:paddingBottom="8dp"
+        android:background="?attr/selectableItemBackground"
+        android:text="@string/time_range_add"
+        android:textColor="@color/primary"
+        android:textSize="14sp"
+        android:textStyle="bold" />
+
+</LinearLayout>

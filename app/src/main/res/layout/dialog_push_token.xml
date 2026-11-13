@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 新增/修改 PushPlus 通道：名称 + token -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:paddingStart="24dp"
+    android:paddingEnd="24dp"
+    android:paddingTop="8dp">
+
+    <EditText
+        android:id="@+id/edt_token_name"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:singleLine="true"
+        android:hint="@string/token_name_hint"
+        android:textSize="15sp" />
+
+    <EditText
+        android:id="@+id/edt_token_value"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="6dp"
+        android:singleLine="true"
+        android:hint="@string/token_dialog_hint"
+        android:textSize="15sp" />
+
+</LinearLayout>
