@@ -219,7 +219,7 @@
 
     <!-- 打开 APP 后自动最小化 -->
     <string name="settings_auto_minimize">打开 APP 后自动最小化</string>
-    <string name="auto_minimize_hint">打开后直接退到后台。需要放行「自启动」「后台运行」，并关闭电池限制。</string>
+    <string name="auto_minimize_hint">打开后直接退到后台。需要放行「自启动」「后台运行」，并关闭电池限制。\n连着「不提醒」的 WiFi 时不退出。</string>
     <string name="auto_minimize_on_toast">已退到后台运行，点通知栏可回到界面</string>
     <string name="auto_minimize_off_toast">已关闭，下次打开会停在界面</string>
     <string name="auto_minimize_perm_title">需要后台权限</string>

@@ -256,10 +256,13 @@ public class MainActivity extends AppCompatActivity {
      *   所以不会出现「点了图标也进不了界面」的死锁。
      * - 从常驻通知点进来带 EXTRA_FROM_NOTIFICATION，直接放行到界面。
      * - 权限没给齐就不退：退下去也扫不到，只会让人误以为在跑。
+     * - **连着「不提醒」的 WiFi 也不退**：那个网络下本来就什么都不会响，
+     *   再退到后台等于把 APP 藏起来 —— 用户打开就是想看一眼，让他看。
      */
     private void maybeAutoMinimize(Bundle savedInstanceState) {
         if (savedInstanceState != null) return;
         if (!BeaconPrefs.isAutoMinimize(this)) return;
+        if (WifiGate.blocked(this)) return;
         Intent it = getIntent();
         if (it != null && it.getBooleanExtra(EXTRA_FROM_NOTIFICATION, false)) return;
         if (scanner == null || !scanner.hasScanPermission()) return;
