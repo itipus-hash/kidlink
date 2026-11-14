@@ -219,24 +219,25 @@
 
     <!-- 打开 APP 后自动最小化 -->
     <string name="settings_auto_minimize">打开 APP 后自动最小化</string>
-    <string name="auto_minimize_hint">开启后，打开 APP 会直接退到后台开始扫描，不停留在界面上。\n需要在系统设置中允许本应用「自启动」「后台运行」，并把电池策略设为「不受限制」，否则进程会被系统清理，导致收不到提醒。\n想回到界面：点通知栏的「接娃助手正在扫描」即可。</string>
+    <string name="auto_minimize_hint">打开后直接退到后台。需要放行「自启动」「后台运行」，并关闭电池限制。</string>
     <string name="auto_minimize_on_toast">已退到后台运行，点通知栏可回到界面</string>
     <string name="auto_minimize_off_toast">已关闭，下次打开会停在界面</string>
     <string name="auto_minimize_perm_title">需要后台权限</string>
-    <string name="auto_minimize_perm_body">开启后 APP 会在后台持续扫描信标。\n\n请确认这几项已设置好：\n1. 允许「自启动」\n2. 允许「后台运行」\n3. 电池 → 设为「不受限制」\n\n否则系统会清理后台进程，接不到提醒。</string>
+    <string name="auto_minimize_perm_body">需要放行这三项，否则后台会被清理：\n1. 允许「自启动」\n2. 允许「后台运行」\n3. 电池 → 「不受限制」</string>
     <string name="go_to_settings">去设置</string>
     <string name="got_it">知道了</string>
     <string name="open_settings_failed">无法打开系统设置，请手动进入</string>
 
-    <!-- 指定 WiFi 不推送（系统设置内） -->
-    <string name="settings_wifi_block">指定 WiFi 不推送</string>
+    <!-- 指定 WiFi 不提醒（系统设置内） -->
+    <string name="settings_wifi_block">指定 WiFi 不提醒</string>
     <string name="wifi_block_value_none">未设置</string>
     <string name="wifi_block_value_count">已添加 %d 个</string>
-    <string name="wifi_block_hint_blocked">连着名单里的 WiFi 时不推送提醒。当前 WiFi：%s（此刻不推送）</string>
-    <string name="wifi_block_hint_normal">连着名单里的 WiFi 时不推送提醒。当前 WiFi：%s</string>
-    <string name="wifi_block_hint_off">连着名单里的 WiFi 时不推送提醒。当前未连接 WiFi</string>
-    <string name="wifi_block_dialog_title">指定 WiFi 不推送</string>
-    <string name="wifi_block_dialog_msg">连上名单里的 WiFi 时，完全不推送任何提醒 —— 适合家里、公司这类「人在那儿本来就不用提醒」的地方。\n只影响推送，界面上的距离和图标照常显示。\n\nWiFi 名称要系统「位置信息」权限才能读到，读不到时会显示「未连接」。</string>
+    <string name="wifi_block_hint_blocked">当前 WiFi：%s（不提醒）</string>
+    <string name="wifi_block_hint_normal">当前 WiFi：%s</string>
+    <string name="wifi_block_hint_off">当前未连接 WiFi</string>
+    <string name="wifi_block_dialog_title">指定 WiFi 不提醒</string>
+    <string name="wifi_block_dialog_msg">连上名单里的 WiFi 时不提醒：推送、震动、悬浮提示全部停掉。界面照常显示距离。</string>
+    <string name="wifi_block_muted_tip">WiFi「%s」已暂停提醒</string>
     <string name="wifi_block_current">当前 WiFi：%s</string>
     <string name="wifi_block_current_none">当前 WiFi：未连接</string>
     <string name="wifi_block_add_current">＋ 添加当前 WiFi</string>

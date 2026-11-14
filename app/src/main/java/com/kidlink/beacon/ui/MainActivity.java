@@ -131,6 +131,12 @@ public class MainActivity extends AppCompatActivity {
      */
     private boolean navigatingInternal = false;
 
+    /**
+     * 这一趟前台是否已经提示过「当前 WiFi 已暂停提醒」。
+     * 提示一次就够 —— 目的是别让用户以为震动 / 推送坏了，而不是反复提醒。
+     */
+    private boolean wifiMutedTipShown = false;
+
     private final ActivityResultLauncher<String[]> permissionLauncher =
             registerForActivityResult(new ActivityResultContracts.RequestMultiplePermissions(), result -> {
                 if (!currentBeacons.isEmpty()) startScanForCurrent();
@@ -354,6 +360,31 @@ public class MainActivity extends AppCompatActivity {
         if (!currentBeacons.isEmpty()) {
             startScanForCurrent();
         }
+        tipIfWifiMuted();
+    }
+
+    /**
+     * 当前连着「不提醒」名单里的 WiFi 时，冒一条悬浮提示告诉用户：
+     * 不是坏了，是这个网络下被静音了。每趟前台只提示一次。
+     *
+     * 只提示、不打扰：用 Feedback（和「保存成功」同款底部胶囊），
+     * 不带震动、不进通知栏 —— 否则「静音」这件事本身又变成一次提醒。
+     */
+    private void tipIfWifiMuted() {
+        if (!WifiGate.blocked(this)) {
+            wifiMutedTipShown = false;   // 换了网络，下次再连回来重新提示
+            return;
+        }
+        if (wifiMutedTipShown) return;
+        wifiMutedTipShown = true;
+        String ssid = WifiGate.currentSsid(this);
+        // 等首帧上屏再冒泡，否则冷启动时提示会在 Splash 底下跑完
+        final String text = getString(R.string.wifi_block_muted_tip,
+                ssid == null ? "" : ssid);
+        handler.postDelayed(() -> {
+            if (isFinishing() || isDestroyed()) return;
+            Feedback.show(findViewById(android.R.id.content), text, true);
+        }, 900);
     }
 
     /**
@@ -754,9 +785,12 @@ public class MainActivity extends AppCompatActivity {
      *
      * 注意震动只读不写冷却：震动发生在变色距离（一般 5 米），推送在推送距离（默认 2 米），
      * 如果震动把冷却占了，走到 2 米时那条微信就发不出去了。
+     *
+     * WiFi 屏蔽时连震动一起停 —— 这条名单的定义是「不提醒」，不只是「不推送」。
      */
     private void onEnterNearZone(Panel p, double distance) {
         if (p.beacon == null) return;
+        if (WifiGate.blocked(this)) return;
         if (inArrivalCooldown(p.beacon.getId())) return;
         vibrateNear();
     }
@@ -775,7 +809,10 @@ public class MainActivity extends AppCompatActivity {
         if (distance <= meters) {
             if (!p.frontTipOn) {
                 p.frontTipOn = true;
-                if (isForeground) showLightTip(p.beacon.getName(), meters);
+                // WiFi 屏蔽时不冒泡，但标记照常落下：这次进来算过了，换网络也不补一条
+                if (isForeground && !WifiGate.blocked(this)) {
+                    showLightTip(p.beacon.getName(), meters);
+                }
             }
         } else if (distance > meters + 2) {
             p.frontTipOn = false;
@@ -958,7 +995,7 @@ public class MainActivity extends AppCompatActivity {
         p.approachFired = true;
         BeaconPrefs.setApproachInside(this, beaconId, true);
 
-        // 指定 WiFi 不推送（家里 / 公司这类已知不用提醒的地方）。
+        // 指定 WiFi 不提醒（家里 / 公司这类已知不用提醒的地方）。
         // 状态照常落下 —— 这次进入就不再补推了，只是不发请求出去。
         if (WifiGate.blocked(this)) return;
 
@@ -1033,7 +1070,7 @@ public class MainActivity extends AppCompatActivity {
         p.arrivedFired = true;
         BeaconPrefs.setArrivalInside(this, beaconId, true);
 
-        // 指定 WiFi 不推送：这里同样先落状态再判断，
+        // 指定 WiFi 不提醒：这里同样先落状态再判断，
         // 免得「在家被屏蔽」这件事在换了网络之后又补推一条迟到的「接到」
         if (WifiGate.blocked(this)) return;
 

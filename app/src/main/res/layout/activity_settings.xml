@@ -651,7 +651,7 @@
                         android:layout_marginEnd="20dp"
                         android:background="@color/divider" />
 
-                    <!-- 指定 WiFi 不推送：连上名单里的 WiFi 就完全不推，比调距离更能压误报 -->
+                    <!-- 指定 WiFi 不提醒：连上名单里的 WiFi 就推送 / 震动 / 悬浮提示全停，比调距离更能压误报 -->
                     <LinearLayout
                         android:id="@+id/row_wifi_block"
                         android:layout_width="match_parent"

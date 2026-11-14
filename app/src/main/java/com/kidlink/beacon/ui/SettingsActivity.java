@@ -51,7 +51,7 @@ public class SettingsActivity extends AppCompatActivity {
     /** refresh() 回填开关时置 true，避免把「回填」当成用户点击去弹权限对话框 */
     private boolean bindingSwitches = false;
 
-    /** 指定 WiFi 不推送：设置页那一行的两行文字 */
+    /** 指定 WiFi 不提醒：设置页那一行的两行文字 */
     private TextView txtWifiValue;
     private TextView txtWifiHint;
 
@@ -163,7 +163,7 @@ public class SettingsActivity extends AppCompatActivity {
             }
         });
 
-        // 指定 WiFi 不推送：点开名单管理，里面可以一键加当前 WiFi
+        // 指定 WiFi 不提醒：点开名单管理，里面可以一键加当前 WiFi
         findViewById(R.id.row_wifi_block).setOnClickListener(v -> showWifiBlockDialog());
 
         // 开源免费说明：整块可点，轻触把支付宝邮箱复制到剪贴板
@@ -1190,7 +1190,7 @@ public class SettingsActivity extends AppCompatActivity {
         }
     }
 
-    // === 指定 WiFi 不推送 ===
+    // === 指定 WiFi 不提醒 ===
     //
     // 这一层要解决的是「距离表达不了位置」的问题：在家 / 在公司，距离可能很小，
     // 但那里本来就不需要提醒。把 WiFi 名称加进名单，连上就直接不推。

@@ -75,7 +75,7 @@ public class BeaconPrefs {
     /** 冷启动后自动退到后台（默认关） */
     private static final String KEY_AUTO_MINIMIZE = "auto_minimize";
     /**
-     * 「指定 WiFi 不推送」名单，存 JSON 数组，元素就是 WiFi 名称。
+     * 「指定 WiFi 不提醒」名单，存 JSON 数组，元素就是 WiFi 名称。
      *
      * 为空 = 不做这层判断。名字是用户自己加进来的，所以按字符串精确比对
      * （忽略大小写），不做模糊匹配 —— 免得「Home」把「Home-5G」也一起屏蔽了。
