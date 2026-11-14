@@ -69,6 +69,8 @@ public class BeaconForegroundService extends Service {
 
         Intent open = new Intent(this, MainActivity.class);
         open.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+        // 从通知进来 = 用户想开界面；带上这个标记，就不受「打开后自动最小化」影响
+        open.putExtra(MainActivity.EXTRA_FROM_NOTIFICATION, true);
         PendingIntent contentIntent = PendingIntent.getActivity(
                 this, 0, open, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
 

@@ -72,6 +72,8 @@ public class BeaconPrefs {
     private static final String KEY_FRONT_TIP_METERS = "front_tip_meters";
     /** 接送成功推送成功后，提示条走完就退出 APP */
     private static final String KEY_EXIT_AFTER_ARRIVAL = "exit_after_arrival";
+    /** 冷启动后自动退到后台（默认关） */
+    private static final String KEY_AUTO_MINIMIZE = "auto_minimize";
 
     private BeaconPrefs() {}
 
@@ -545,5 +547,17 @@ public class BeaconPrefs {
 
     public static void setExitAfterArrival(Context ctx, boolean on) {
         sp(ctx).edit().putBoolean(KEY_EXIT_AFTER_ARRIVAL, on).apply();
+    }
+
+    /**
+     * 打开 APP 后自动最小化：冷启动直接退到后台，界面不停留。
+     * 默认关 —— 这是给「只想让它在后台跑、不想看界面」的用法准备的。
+     */
+    public static boolean isAutoMinimize(Context ctx) {
+        return sp(ctx).getBoolean(KEY_AUTO_MINIMIZE, false);
+    }
+
+    public static void setAutoMinimize(Context ctx, boolean on) {
+        sp(ctx).edit().putBoolean(KEY_AUTO_MINIMIZE, on).apply();
     }
 }

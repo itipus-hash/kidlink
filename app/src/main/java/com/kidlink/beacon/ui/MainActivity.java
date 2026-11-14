@@ -51,6 +51,9 @@ import java.util.List;
 public class MainActivity extends AppCompatActivity {
 
     private static final int RSSI_WINDOW = 5;
+
+    /** 从常驻通知点进来时带的标记：这种入口是「我要看界面」，不自动最小化 */
+    public static final String EXTRA_FROM_NOTIFICATION = "from_notification";
     /** 每隔这么久检查一次"距离上次收到广播过去多久了" */
     private static final long CHECK_TICK_MS = 1000;
     /** 推送距离在设置里可调，默认 2 米；离开这个距离 + 3 米后重新武装推送 */
@@ -234,6 +237,34 @@ public class MainActivity extends AppCompatActivity {
         });
 
         requestPermissions();
+
+        maybeAutoMinimize(savedInstanceState);
+    }
+
+    /**
+     * 「打开 APP 后自动最小化」：只在冷启动那一次退到后台。
+     *
+     * 为什么只认冷启动：
+     * - 退到后台后 task 还在，用户再点图标走的是 onNewIntent（singleTop），不会再次触发，
+     *   所以不会出现「点了图标也进不了界面」的死锁。
+     * - 从常驻通知点进来带 EXTRA_FROM_NOTIFICATION，直接放行到界面。
+     * - 权限没给齐就不退：退下去也扫不到，只会让人误以为在跑。
+     */
+    private void maybeAutoMinimize(Bundle savedInstanceState) {
+        if (savedInstanceState != null) return;
+        if (!BeaconPrefs.isAutoMinimize(this)) return;
+        Intent it = getIntent();
+        if (it != null && it.getBooleanExtra(EXTRA_FROM_NOTIFICATION, false)) return;
+        if (scanner == null || !scanner.hasScanPermission()) return;
+        // 等首帧画出来再退：onCreate 里立刻退，窗口还没上屏，用户会觉得「点了没反应」
+        handler.postDelayed(this::minimizeToBackground, 600);
+    }
+
+    private void minimizeToBackground() {
+        if (isFinishing() || isDestroyed()) return;
+        android.widget.Toast.makeText(this, R.string.auto_minimize_on_toast,
+                android.widget.Toast.LENGTH_SHORT).show();
+        moveTaskToBack(true);
     }
 
     /**

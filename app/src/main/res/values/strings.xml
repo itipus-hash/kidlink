@@ -289,4 +289,23 @@
     <!-- Notification channel -->
     <string name="alert_channel_name">距离提醒</string>
     <string name="alert_channel_desc">信标进入设定范围时提醒</string>
+
+    <!-- 打开 APP 后自动最小化 -->
+    <string name="settings_auto_minimize">打开 APP 后自动最小化</string>
+    <string name="auto_minimize_hint">开启后，打开 APP 会直接退到后台开始扫描，不停留在界面上。\n需要在系统设置中允许本应用「自启动」「后台运行」，并把电池策略设为「不受限制」，否则进程会被系统清理，导致收不到提醒。\n想回到界面：点通知栏的「接娃助手正在扫描」即可。</string>
+    <string name="auto_minimize_on_toast">已退到后台运行，点通知栏可回到界面</string>
+    <string name="auto_minimize_off_toast">已关闭，下次打开会停在界面</string>
+    <string name="auto_minimize_perm_title">需要后台权限</string>
+    <string name="auto_minimize_perm_body">开启后 APP 会在后台持续扫描信标。\n\n请确认这几项已设置好：\n1. 允许「自启动」\n2. 允许「后台运行」\n3. 电池 → 设为「不受限制」\n\n否则系统会清理后台进程，接不到提醒。</string>
+    <string name="go_to_settings">去设置</string>
+    <string name="got_it">知道了</string>
+    <string name="open_settings_failed">无法打开系统设置，请手动进入</string>
+
+    <!-- 开源免费 / 自愿捐赠（设置页最底部，常驻不折叠） -->    <string name="donate_title">开源免费</string>
+    <string name="donate_body">本项目完全免费开源，无付费解锁、无强制收费，所有功能都可以直接使用。\n\n如果觉得对你有帮助，可以自愿支持。捐献只代表心意，不会解锁任何功能，也不会因此获得新版本、新特性或优先支持。</string>
+    <string name="donate_mail">支付宝：supit@163.com</string>
+    <string name="donate_tap_hint">轻触复制邮箱 · 仅自愿捐赠，不承诺售后、定制、优先服务</string>
+    <string name="donate_copied">已复制 supit@163.com</string>
+    <string name="donate_repo">项目地址：github.com/itipus-hash/kidlink</string>
+    <string name="open_repo_failed">无法打开浏览器，请手动访问</string>
 </resources>

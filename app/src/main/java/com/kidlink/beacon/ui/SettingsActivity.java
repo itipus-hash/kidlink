@@ -26,6 +26,11 @@ import java.util.List;
  */
 public class SettingsActivity extends AppCompatActivity {
 
+    /** 自愿捐赠收款邮箱；点设置页底部那行就复制它 */
+    private static final String DONATE_EMAIL = "supit@163.com";
+    /** 开源仓库地址；点「项目地址」那行用浏览器打开 */
+    private static final String REPO_URL = "https://github.com/itipus-hash/kidlink";
+
     private TextView txtPicker;
     private TextView txtCooldown;
     private TextView txtInterval;
@@ -42,6 +47,9 @@ public class SettingsActivity extends AppCompatActivity {
     private android.view.View groupSystemDetails;
     private TextView txtSystemChevron;
     private com.google.android.material.switchmaterial.SwitchMaterial swExitAfter;
+    private com.google.android.material.switchmaterial.SwitchMaterial swAutoMinimize;
+    /** refresh() 回填开关时置 true，避免把「回填」当成用户点击去弹权限对话框 */
+    private boolean bindingSwitches = false;
 
     /** 动态填进去的一串 PushPlus 通道行 */
     private android.widget.LinearLayout tokenList;
@@ -100,6 +108,7 @@ public class SettingsActivity extends AppCompatActivity {
         groupSystemDetails = findViewById(R.id.group_system_details);
         txtSystemChevron = findViewById(R.id.txt_system_chevron);
         swExitAfter = findViewById(R.id.sw_exit_after);
+        swAutoMinimize = findViewById(R.id.sw_auto_minimize);
 
         findViewById(R.id.row_push_header).setOnClickListener(v -> {
             pushExpanded = !pushExpanded;
@@ -115,6 +124,39 @@ public class SettingsActivity extends AppCompatActivity {
         });
         swExitAfter.setOnCheckedChangeListener((btn, checked) ->
                 BeaconPrefs.setExitAfterArrival(this, checked));
+
+        // 打开就自动最小化：属于「后台常驻」类开关，打开时必须把 ROM 的省电策略说清楚，
+        // 否则用户以为开了就一定收得到，实际被系统清掉。
+        swAutoMinimize.setOnCheckedChangeListener((btn, checked) -> {
+            if (bindingSwitches) return;
+            BeaconPrefs.setAutoMinimize(this, checked);
+            if (checked) {
+                showBackgroundPermissionTip();
+            } else {
+                Feedback.show(SettingsActivity.this, R.string.auto_minimize_off_toast);
+            }
+        });
+
+        // 开源免费说明：整块可点，轻触把支付宝邮箱复制到剪贴板
+        findViewById(R.id.row_donate).setOnClickListener(v -> {
+            android.content.ClipboardManager cm =
+                    (android.content.ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+            if (cm != null) {
+                cm.setPrimaryClip(android.content.ClipData.newPlainText("email", DONATE_EMAIL));
+            }
+            Feedback.show(v, R.string.donate_copied);
+        });
+
+        // 项目地址单独一行：内层可点会先吃掉事件，不影响外层「点整块复制邮箱」
+        findViewById(R.id.txt_repo).setOnClickListener(v -> {
+            try {
+                startActivity(new android.content.Intent(
+                        android.content.Intent.ACTION_VIEW,
+                        android.net.Uri.parse(REPO_URL)));
+            } catch (Exception e) {
+                Feedback.show(this, R.string.open_repo_failed);
+            }
+        });
 
         tokenList = findViewById(R.id.token_list);
         txtTokenEmpty = findViewById(R.id.txt_token_empty);
@@ -197,6 +239,9 @@ public class SettingsActivity extends AppCompatActivity {
         applyNearVisibility();
         applySystemVisibility();
         swExitAfter.setChecked(BeaconPrefs.isExitAfterArrival(this));
+        bindingSwitches = true;
+        swAutoMinimize.setChecked(BeaconPrefs.isAutoMinimize(this));
+        bindingSwitches = false;
 
         txtPicker.setText(BeaconPrefs.getPickerName(this));
 
@@ -1090,6 +1135,27 @@ public class SettingsActivity extends AppCompatActivity {
             return Integer.parseInt(s.trim());
         } catch (NumberFormatException e) {
             return fallback;
+        }
+    }
+
+    /** 打开「自动最小化」时弹一次：把 ROM 需要放行的三项讲清楚，并给一个直达入口 */
+    private void showBackgroundPermissionTip() {
+        new MaterialAlertDialogBuilder(this)
+                .setTitle(R.string.auto_minimize_perm_title)
+                .setMessage(R.string.auto_minimize_perm_body)
+                .setNegativeButton(R.string.got_it, null)
+                .setPositiveButton(R.string.go_to_settings, (d, w) -> openAppSettings())
+                .show();
+    }
+
+    /** 跳到本应用的系统设置页（自启动 / 电池优化都在这一层下面） */
+    private void openAppSettings() {
+        try {
+            startActivity(new android.content.Intent(
+                    android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                    android.net.Uri.fromParts("package", getPackageName(), null)));
+        } catch (Exception e) {
+            Feedback.show(this, R.string.open_settings_failed);
         }
     }
 
