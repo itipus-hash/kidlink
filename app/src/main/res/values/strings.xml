@@ -8,6 +8,24 @@
     <string name="no_beacon_tip">还没有添加蓝牙信标，点右上角图标添加一个</string>
     <string name="no_beacon_selected">未选择任何信标\n点右上角图标进入信标管理</string>
 
+    <!-- 没有信标时的购买建议（仅空状态显示） -->
+    <string name="buy_beacon_title">还没有信标？可以先买这个</string>
+    <string name="buy_beacon_name">大夏龙雀 iBeacon 基站 · 防水型\n短距离室内定位 / 打卡 / 资产追踪 · 到手价 ¥13.90 包邮</string>
+    <string name="buy_beacon_action">点这里去淘宝下单 ›</string>
+    <string name="buy_beacon_proto">⚠ 只支持 iBeacon 协议 · 点这里看为什么</string>
+    <string name="protocol_title">为什么只支持 iBeacon</string>
+    <string name="protocol_body">iBeacon 是 Apple 定的广播格式，每包里固定带着三段标识：UUID、Major、Minor。这三段出厂写死、每次广播一模一样，程序才认得出「这是我塞进书包的那一颗」。
+
+Eddystone（Google 的另一套格式）和普通蓝牙设备做不到这点：
+· Eddystone-UID 的命名空间可以随便改，Eddystone-URL 干脆没有 Major/Minor；
+· 很多设备用随机 MAC、轮换 ID，每次扫到的「身份」都不同；
+· 有些只是普通 BLE 外设，压根没有标识字段。
+
+结果是：能扫到，但没法稳定区分是哪一颗，也就没法做到「只对这一个推提醒」。所以扫描时只解析 iBeacon 包。
+
+买东西看两点就够了：标题或参数里写「iBeacon」；用本 APP 扫一下能显示 UUID 的，就能用。</string>
+    <string name="open_shop_failed">无法打开浏览器，请手动访问 m.tb.cn/h.j9RiIck</string>
+
     <!-- Beacon manager -->
     <string name="beacon_manager_title">蓝牙信标</string>
     <string name="beacon_manager_hint">点击选中 / 再点取消（最多 3 个，至少 1 个）\n长按查看信标信息 · 按住卡片滑动可排序</string>

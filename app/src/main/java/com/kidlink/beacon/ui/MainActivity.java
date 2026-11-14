@@ -67,6 +67,13 @@ public class MainActivity extends AppCompatActivity {
      * 持久冷却管的是「这一趟」，这 90 秒管的是「这一秒」，两个一起兜底。
      */
     private static final long MIN_APPROACH_GAP_MS = 90_000L;
+
+    /**
+     * 空状态里那款推荐信标的淘宝链接。
+     * 只在「一个信标都没有」时露出：这时候用户最缺的就是硬件本身，
+     * 用过的型号直接给出来，省得自己去挑兼容性。
+     */
+    private static final String SHOP_URL = "https://m.tb.cn/h.j9RiIck";
     /** 这么久一条广播都没收到，就认为扫描僵了，重启一次 */
     private static final long SCAN_DEAD_MS = 90_000L;
     /** 后台时更激进：安静 15 秒就重启扫描 */
@@ -136,6 +143,9 @@ public class MainActivity extends AppCompatActivity {
      * 提示一次就够 —— 目的是别让用户以为震动 / 推送坏了，而不是反复提醒。
      */
     private boolean wifiMutedTipShown = false;
+
+    /** 空状态时的购买建议整块（有信标就隐藏） */
+    private View layoutBuyTip;
 
     private final ActivityResultLauncher<String[]> permissionLauncher =
             registerForActivityResult(new ActivityResultContracts.RequestMultiplePermissions(), result -> {
@@ -221,8 +231,13 @@ public class MainActivity extends AppCompatActivity {
                 R.id.txt_beacon_name_3, R.id.txt_distance_3, R.id.row_signal_3, R.id.txt_rssi_3,
                 R.id.txt_state_3);
 
-        scanner = new BeaconScanner(this);
-        scanner.setListener(new BeaconScanner.OnBeaconScanListener() {
+        // 一个信标都没有时，底部给一条购买建议（有信标时整块隐藏，见 refreshBuyTip）
+        layoutBuyTip = findViewById(R.id.layout_buy_tip);
+        layoutBuyTip.setOnClickListener(v -> openShop());
+        // 内层可点先吃掉事件，不影响外层「点整块去淘宝」
+        findViewById(R.id.txt_buy_proto).setOnClickListener(v -> showProtocolDialog());
+
+        scanner = new BeaconScanner(this);        scanner.setListener(new BeaconScanner.OnBeaconScanListener() {
             @Override
             public void onBeaconFound(IBeaconData beacon, int filteredRssi, double distance) {
                 // 统一在 onRawBeaconData 处理
@@ -268,6 +283,36 @@ public class MainActivity extends AppCompatActivity {
         if (scanner == null || !scanner.hasScanPermission()) return;
         // 等首帧画出来再退：onCreate 里立刻退，窗口还没上屏，用户会觉得「点了没反应」
         handler.postDelayed(this::minimizeToBackground, 600);
+    }
+
+    /**
+     * 空状态里那条购买建议：一个信标都没有才显示。
+     *
+     * 为什么要做这个东西：这个 APP 装完是「空的」，第一道门槛不在软件里，
+     * 在于用户手里得有颗 iBeacon。与其让他自己去找兼容型号，
+     * 不如把我自己用过的那颗直接摆出来（十来块，防水，够用）。
+     */
+    private void refreshBuyTip() {
+        if (layoutBuyTip == null) return;
+        boolean empty = dbHelper.getAllBeacons().isEmpty();
+        layoutBuyTip.setVisibility(empty ? View.VISIBLE : View.GONE);
+    }
+
+    private void openShop() {
+        try {
+            startActivity(new Intent(Intent.ACTION_VIEW, android.net.Uri.parse(SHOP_URL)));
+        } catch (Exception e) {
+            Feedback.show(this, R.string.open_shop_failed);
+        }
+    }
+
+    /** 「为什么只支持 iBeacon」：买错硬件的代价比读一段字大，所以把它写在界面上 */
+    private void showProtocolDialog() {
+        new com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
+                .setTitle(R.string.protocol_title)
+                .setMessage(R.string.protocol_body)
+                .setPositiveButton(R.string.got_it, null)
+                .show();
     }
 
     private void minimizeToBackground() {
@@ -418,6 +463,7 @@ public class MainActivity extends AppCompatActivity {
     private void loadCurrentBeacons() {
         // 只有一个信标时自动选中（第一次添加完即生效）
         BeaconPrefs.ensureAutoSelect(this, dbHelper);
+        refreshBuyTip();
 
         List<Long> ids = BeaconPrefs.getSelectedIds(this);
         List<BeaconEntity> fresh = new ArrayList<>();

@@ -47,6 +47,23 @@ cd kidlink
 
 `local.properties` 不在仓库里，用 Android Studio 打开时会自动生成，或手动写 `sdk.dir=<你的 SDK 路径>`。
 
+## 只支持 iBeacon，为什么
+
+iBeacon 是 Apple 定的广播格式，每包里固定带三段标识：**UUID + Major + Minor**。出厂写死、每次广播一模一样，程序才认得出「这是我塞进书包的那一颗」。
+
+Eddystone（Google 的另一套格式）和普通 BLE 设备做不到：
+
+| 格式 | 问题 |
+|---|---|
+| Eddystone-UID | 命名空间 instance 可随意改写 |
+| Eddystone-URL | 根本没有 Major / Minor |
+| 很多普通 BLE 设备 | 随机 MAC / 轮换 ID，每次扫到的「身份」都不同 |
+| 纯 BLE 外设 | 压根没有标识字段 |
+
+结论就是：**扫得到，但没法稳定区分是哪一颗**，也就做不了「只对这一个推提醒」。所以解析器只认 iBeacon 包（`1A FF 4C 00 02 15`）。
+
+买设备看两点就够：标题写「iBeacon」；用本 App 扫一下，能显示 UUID 的就能用。
+
 ## 几个踩过的坑
 
 写在这里，省得下一个人再踩一遍。
