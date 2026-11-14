@@ -73,26 +73,6 @@
             android:screenOrientation="portrait" />
 
         <activity
-            android:name=".ui.RangingActivity"
-            android:exported="false"
-            android:screenOrientation="portrait" />
-
-        <activity
-            android:name=".ui.RawBeaconActivity"
-            android:exported="false"
-            android:screenOrientation="portrait" />
-
-        <activity
-            android:name=".ui.BeaconDetailActivity"
-            android:exported="false"
-            android:screenOrientation="portrait" />
-
-        <activity
-            android:name=".ui.EditBeaconActivity"
-            android:exported="false"
-            android:screenOrientation="portrait" />
-
-        <activity
             android:name=".ui.QRScanActivity"
             android:exported="false"
             android:screenOrientation="portrait" />

@@ -533,9 +533,6 @@ public class BeaconManagerActivity extends AppCompatActivity {
                 if (selected) {
                     txtTag.setText(R.string.tag_current);
                     txtTag.setTextColor(ContextCompat.getColor(BeaconManagerActivity.this, R.color.primary));
-                } else if (b.hasCalibration()) {
-                    txtTag.setText(R.string.tag_calibrated);
-                    txtTag.setTextColor(ContextCompat.getColor(BeaconManagerActivity.this, R.color.text_secondary));
                 } else {
                     txtTag.setText("");
                 }

@@ -23,20 +23,10 @@ public class BeaconQrCodec {
     public static final String PREFIX = "KIDLINK:v1:";
 
     /**
-     * 将信标配置编码为二维码内容字符串（基础字段）
-     */
-    public static String encode(BeaconEntity beacon) {
-        return encode(beacon, false);
-    }
-
-    /**
-     * 完整分享编码：包含标定数据与备注，方便对方手机直接还原距离手感
+     * 把信标配置编码成二维码内容。带备注与 MAC，对方扫一下就能还原出同一台信标。
+     * 前缀仍是 v1：标定字段移除后旧二维码照样能解析（多出来的 key 会被忽略）。
      */
     public static String encodeFull(BeaconEntity beacon) {
-        return encode(beacon, true);
-    }
-
-    private static String encode(BeaconEntity beacon, boolean withCalibration) {
         try {
             JSONObject json = new JSONObject();
             json.put("n", beacon.getName());
@@ -45,13 +35,8 @@ public class BeaconQrCodec {
             json.put("ma", beacon.getMajor());
             json.put("mi", beacon.getMinor());
             json.put("rs", beacon.getRssiAt1m());
-            json.put("th", beacon.getThresholdRssi());
             if (beacon.hasMac()) {
                 json.put("mc", beacon.getMac());
-            }
-            if (withCalibration && beacon.hasCalibration()) {
-                json.put("cd", beacon.getCalibDistance());
-                json.put("cr", beacon.getCalibRssi());
             }
 
             String jsonStr = json.toString();
@@ -84,9 +69,6 @@ public class BeaconQrCodec {
             beacon.setMajor(json.optInt("ma", 0));
             beacon.setMinor(json.optInt("mi", 0));
             beacon.setRssiAt1m(json.optInt("rs", BeaconEntity.DEFAULT_RSSI_1M));
-            beacon.setThresholdRssi(json.optInt("th", BeaconEntity.DEFAULT_THRESHOLD));
-            beacon.setCalibDistance(json.optDouble("cd", 0));
-            beacon.setCalibRssi(json.optInt("cr", 0));
             beacon.setMac(json.optString("mc", ""));
             beacon.setQrContent(qrContent);
 

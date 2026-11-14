@@ -267,7 +267,6 @@ public class ScanBeaconActivity extends AppCompatActivity {
         beacon.setMinor(item.minor);
         beacon.setMac(item.mac);
         beacon.setRssiAt1m(item.txPower != 0 ? item.txPower : BeaconEntity.DEFAULT_RSSI_1M);
-        beacon.setThresholdRssi(BeaconEntity.DEFAULT_THRESHOLD);
 
         long id = dbHelper.insertBeacon(beacon);
         if (id > 0) {

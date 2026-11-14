@@ -27,11 +27,8 @@ public class BeaconDbHelper extends SQLiteOpenHelper {
     public static final String COL_MAJOR = "major";
     public static final String COL_MINOR = "minor";
     public static final String COL_RSSI_1M = "rssi_1m";
-    public static final String COL_THRESHOLD = "threshold_rssi";
     public static final String COL_CREATE_TIME = "create_time";
     public static final String COL_SORT_ORDER = "sort_order";
-    public static final String COL_CALIB_DISTANCE = "calib_distance";
-    public static final String COL_CALIB_RSSI = "calib_rssi";
     public static final String COL_QR_CONTENT = "qr_content";
     /** 设备蓝牙地址：三件套撞车的两个信标靠它区分 */
     public static final String COL_MAC = "mac";
@@ -45,11 +42,8 @@ public class BeaconDbHelper extends SQLiteOpenHelper {
             COL_MAJOR + " INTEGER NOT NULL, " +
             COL_MINOR + " INTEGER NOT NULL, " +
             COL_RSSI_1M + " INTEGER DEFAULT -59, " +
-            COL_THRESHOLD + " INTEGER DEFAULT -70, " +
             COL_CREATE_TIME + " INTEGER DEFAULT 0, " +
             COL_SORT_ORDER + " INTEGER DEFAULT 0, " +
-            COL_CALIB_DISTANCE + " REAL DEFAULT 0, " +
-            COL_CALIB_RSSI + " INTEGER DEFAULT 0, " +
             COL_MAC + " TEXT DEFAULT '', " +
             COL_QR_CONTENT + " TEXT DEFAULT '')";
 
@@ -70,14 +64,8 @@ public class BeaconDbHelper extends SQLiteOpenHelper {
                 db.execSQL("ALTER TABLE " + TABLE_BEACONS + " ADD COLUMN " +
                         COL_SORT_ORDER + " INTEGER DEFAULT 0");
             } catch (Exception ignored) {}
-            try {
-                db.execSQL("ALTER TABLE " + TABLE_BEACONS + " ADD COLUMN " +
-                        COL_CALIB_DISTANCE + " REAL DEFAULT 0");
-            } catch (Exception ignored) {}
-            try {
-                db.execSQL("ALTER TABLE " + TABLE_BEACONS + " ADD COLUMN " +
-                        COL_CALIB_RSSI + " INTEGER DEFAULT 0");
-            } catch (Exception ignored) {}
+            // calib_distance / calib_rssi 两列已随标定功能一起移除。
+            // 老库里残留这两列不影响读写（新代码不再引用），也不需要 DROP。
             try {
                 db.execSQL("ALTER TABLE " + TABLE_BEACONS + " ADD COLUMN " +
                         COL_QR_CONTENT + " TEXT DEFAULT ''");
@@ -249,11 +237,8 @@ public class BeaconDbHelper extends SQLiteOpenHelper {
         cv.put(COL_MAJOR, beacon.getMajor());
         cv.put(COL_MINOR, beacon.getMinor());
         cv.put(COL_RSSI_1M, beacon.getRssiAt1m());
-        cv.put(COL_THRESHOLD, beacon.getThresholdRssi());
         cv.put(COL_CREATE_TIME, beacon.getCreateTime());
         cv.put(COL_SORT_ORDER, beacon.getSortOrder());
-        cv.put(COL_CALIB_DISTANCE, beacon.getCalibDistance());
-        cv.put(COL_CALIB_RSSI, beacon.getCalibRssi());
         cv.put(COL_MAC, beacon.getMac());
         cv.put(COL_QR_CONTENT, beacon.getQrContent());
         return cv;
@@ -269,15 +254,10 @@ public class BeaconDbHelper extends SQLiteOpenHelper {
         beacon.setMajor(cursor.getInt(cursor.getColumnIndexOrThrow(COL_MAJOR)));
         beacon.setMinor(cursor.getInt(cursor.getColumnIndexOrThrow(COL_MINOR)));
         beacon.setRssiAt1m(cursor.getInt(cursor.getColumnIndexOrThrow(COL_RSSI_1M)));
-        beacon.setThresholdRssi(cursor.getInt(cursor.getColumnIndexOrThrow(COL_THRESHOLD)));
         beacon.setCreateTime(cursor.getLong(cursor.getColumnIndexOrThrow(COL_CREATE_TIME)));
         // 新列采用容错读取，兼容极端情况下未完成 ALTER 的旧库
         int idxSort = cursor.getColumnIndex(COL_SORT_ORDER);
         beacon.setSortOrder(idxSort >= 0 ? cursor.getInt(idxSort) : 0);
-        int idxCalibD = cursor.getColumnIndex(COL_CALIB_DISTANCE);
-        beacon.setCalibDistance(idxCalibD >= 0 ? cursor.getDouble(idxCalibD) : 0);
-        int idxCalibR = cursor.getColumnIndex(COL_CALIB_RSSI);
-        beacon.setCalibRssi(idxCalibR >= 0 ? cursor.getInt(idxCalibR) : 0);
         int idxQr = cursor.getColumnIndex(COL_QR_CONTENT);
         beacon.setQrContent(idxQr >= 0 ? cursor.getString(idxQr) : "");
         int idxMac = cursor.getColumnIndex(COL_MAC);
