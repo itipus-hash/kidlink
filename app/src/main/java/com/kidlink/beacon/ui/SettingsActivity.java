@@ -51,6 +51,30 @@ public class SettingsActivity extends AppCompatActivity {
     /** refresh() 回填开关时置 true，避免把「回填」当成用户点击去弹权限对话框 */
     private boolean bindingSwitches = false;
 
+    /** 指定 WiFi 不推送：设置页那一行的两行文字 */
+    private TextView txtWifiValue;
+    private TextView txtWifiHint;
+
+    /** WiFi 名单弹窗打开时才有值，用来在权限回调 / 增删后原地重画 */
+    private TextView wifiDlgCurrent;
+    private android.widget.LinearLayout wifiDlgList;
+    private TextView wifiDlgEmpty;
+
+    /**
+     * 读 WiFi 名称要「位置信息」权限（Android 10 起 SSID 算位置信息）。
+     * 权限给到之后直接把当前 WiFi 加进名单，不用让用户再点一次。
+     */
+    private final androidx.activity.result.ActivityResultLauncher<String> locationLauncher =
+            registerForActivityResult(
+                    new androidx.activity.result.contract.ActivityResultContracts.RequestPermission(),
+                    granted -> {
+                        if (granted) {
+                            addCurrentWifi();
+                        } else {
+                            Feedback.show(this, R.string.wifi_block_need_location);
+                        }
+                    });
+
     /** 动态填进去的一串 PushPlus 通道行 */
     private android.widget.LinearLayout tokenList;
     private android.widget.TextView txtTokenEmpty;
@@ -109,6 +133,8 @@ public class SettingsActivity extends AppCompatActivity {
         txtSystemChevron = findViewById(R.id.txt_system_chevron);
         swExitAfter = findViewById(R.id.sw_exit_after);
         swAutoMinimize = findViewById(R.id.sw_auto_minimize);
+        txtWifiValue = findViewById(R.id.txt_wifi_value);
+        txtWifiHint = findViewById(R.id.txt_wifi_hint);
 
         findViewById(R.id.row_push_header).setOnClickListener(v -> {
             pushExpanded = !pushExpanded;
@@ -136,6 +162,9 @@ public class SettingsActivity extends AppCompatActivity {
                 Feedback.show(SettingsActivity.this, R.string.auto_minimize_off_toast);
             }
         });
+
+        // 指定 WiFi 不推送：点开名单管理，里面可以一键加当前 WiFi
+        findViewById(R.id.row_wifi_block).setOnClickListener(v -> showWifiBlockDialog());
 
         // 开源免费说明：整块可点，轻触把支付宝邮箱复制到剪贴板
         findViewById(R.id.row_donate).setOnClickListener(v -> {
@@ -274,6 +303,8 @@ public class SettingsActivity extends AppCompatActivity {
         txtFrontTip.setText(frontTip <= 0
                 ? getString(R.string.vibrate_choice_off)
                 : getString(R.string.front_tip_item, frontTip));
+
+        renderWifiBlock();
     }
 
     // === 近距离推送 ===
@@ -1157,6 +1188,143 @@ public class SettingsActivity extends AppCompatActivity {
         } catch (Exception e) {
             Feedback.show(this, R.string.open_settings_failed);
         }
+    }
+
+    // === 指定 WiFi 不推送 ===
+    //
+    // 这一层要解决的是「距离表达不了位置」的问题：在家 / 在公司，距离可能很小，
+    // 但那里本来就不需要提醒。把 WiFi 名称加进名单，连上就直接不推。
+    // 名单存在 prefs 里，判定在 MainActivity 真正要发请求之前做一次。
+
+    /** 设置页那一行：多少条名单 + 当前连的 WiFi（以及此刻是否被屏蔽） */
+    private void renderWifiBlock() {
+        if (txtWifiValue == null) return;
+        List<String> list = BeaconPrefs.getWifiBlockList(this);
+        txtWifiValue.setText(list.isEmpty()
+                ? getString(R.string.wifi_block_value_none)
+                : getString(R.string.wifi_block_value_count, list.size()));
+
+        String ssid = com.kidlink.beacon.data.WifiGate.currentSsid(this);
+        if (ssid == null) {
+            txtWifiHint.setText(R.string.wifi_block_hint_off);
+        } else if (BeaconPrefs.isWifiBlocked(this, ssid)) {
+            txtWifiHint.setText(getString(R.string.wifi_block_hint_blocked, ssid));
+        } else {
+            txtWifiHint.setText(getString(R.string.wifi_block_hint_normal, ssid));
+        }
+    }
+
+    private void showWifiBlockDialog() {
+        android.view.View content = getLayoutInflater()
+                .inflate(R.layout.dialog_wifi_block, null, false);
+        wifiDlgCurrent = content.findViewById(R.id.txt_wifi_current);
+        wifiDlgList = content.findViewById(R.id.wifi_list);
+        wifiDlgEmpty = content.findViewById(R.id.txt_wifi_empty);
+        content.findViewById(R.id.btn_add_current_wifi)
+                .setOnClickListener(v -> addCurrentWifi());
+
+        androidx.appcompat.app.AlertDialog dialog = new MaterialAlertDialogBuilder(this)
+                .setTitle(R.string.wifi_block_dialog_title)
+                .setView(content)
+                .setPositiveButton(R.string.wifi_block_done, null)
+                .create();
+        // 弹窗一关就把引用清掉：权限回调晚到也不会往已经销毁的列表里塞东西
+        dialog.setOnDismissListener(d -> {
+            wifiDlgCurrent = null;
+            wifiDlgList = null;
+            wifiDlgEmpty = null;
+        });
+        dialog.show();
+        renderWifiDialog();
+    }
+
+    /** 重画名单弹窗里的内容（打开状态时才有效） */
+    private void renderWifiDialog() {
+        if (wifiDlgList == null) return;
+        String ssid = com.kidlink.beacon.data.WifiGate.currentSsid(this);
+        wifiDlgCurrent.setText(ssid == null
+                ? getString(R.string.wifi_block_current_none)
+                : getString(R.string.wifi_block_current, ssid));
+
+        List<String> list = BeaconPrefs.getWifiBlockList(this);
+        wifiDlgList.removeAllViews();
+        wifiDlgEmpty.setVisibility(list.isEmpty()
+                ? android.view.View.VISIBLE : android.view.View.GONE);
+        for (String name : list) {
+            wifiDlgList.addView(makeWifiRow(name));
+        }
+    }
+
+    /** 名单一行：名称 + 右侧「删除」 */
+    private android.view.View makeWifiRow(final String name) {
+        android.widget.LinearLayout row = new android.widget.LinearLayout(this);
+        row.setOrientation(android.widget.LinearLayout.HORIZONTAL);
+        row.setGravity(android.view.Gravity.CENTER_VERTICAL);
+        row.setPadding(dp(24), dp(6), dp(12), dp(6));
+
+        TextView label = new TextView(this);
+        label.setText(name);
+        label.setTextSize(14);
+        label.setTextColor(androidx.core.content.ContextCompat
+                .getColor(this, R.color.text_primary));
+        label.setSingleLine(true);
+        label.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        row.addView(label, new android.widget.LinearLayout.LayoutParams(
+                0, android.view.ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+
+        TextView del = new TextView(this);
+        del.setText(R.string.delete);
+        del.setTextSize(14);
+        del.setTextColor(androidx.core.content.ContextCompat
+                .getColor(this, R.color.danger));
+        del.setPadding(dp(12), dp(8), dp(12), dp(8));
+        android.util.TypedValue tv = new android.util.TypedValue();
+        if (getTheme().resolveAttribute(android.R.attr.selectableItemBackground, tv, true)) {
+            del.setBackgroundResource(tv.resourceId);
+        }
+        del.setOnClickListener(v -> removeWifi(name));
+        row.addView(del);
+        return row;
+    }
+
+    /**
+     * 把当前连着的 WiFi 加进名单。
+     *
+     * 读 SSID 需要「位置信息」权限：没给就先申请，给到之后回到这里继续加，
+     * 不用让用户再点一次。仍然读不到（没连 WiFi / 系统位置总开关关着）就如实说原因，
+     * 不要静默失败 —— 否则用户会以为功能坏了。
+     */
+    private void addCurrentWifi() {
+        if (!com.kidlink.beacon.data.WifiGate.canReadSsid(this)) {
+            locationLauncher.launch(android.Manifest.permission.ACCESS_FINE_LOCATION);
+            return;
+        }
+        String ssid = com.kidlink.beacon.data.WifiGate.currentSsid(this);
+        if (ssid == null) {
+            Feedback.show(this, com.kidlink.beacon.data.WifiGate.isLocationEnabled(this)
+                    ? R.string.wifi_block_no_ssid
+                    : R.string.wifi_block_location_off);
+            return;
+        }
+        if (BeaconPrefs.isWifiBlocked(this, ssid)) {
+            Feedback.show(this, getString(R.string.wifi_block_exists, ssid));
+            return;
+        }
+        List<String> list = BeaconPrefs.getWifiBlockList(this);
+        list.add(ssid);
+        BeaconPrefs.setWifiBlockList(this, list);
+        renderWifiDialog();
+        renderWifiBlock();
+        Feedback.show(this, getString(R.string.wifi_block_added, ssid));
+    }
+
+    private void removeWifi(String name) {
+        List<String> list = BeaconPrefs.getWifiBlockList(this);
+        list.remove(name);
+        BeaconPrefs.setWifiBlockList(this, list);
+        renderWifiDialog();
+        renderWifiBlock();
+        Feedback.show(this, getString(R.string.wifi_block_removed, name));
     }
 
     private android.view.View wrapInPadding(android.view.View child) {

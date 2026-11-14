@@ -28,6 +28,7 @@ import com.kidlink.beacon.ble.IBeaconParser;
 import com.kidlink.beacon.data.BeaconDbHelper;
 import com.kidlink.beacon.data.BeaconEntity;
 import com.kidlink.beacon.data.BeaconPrefs;
+import com.kidlink.beacon.data.WifiGate;
 import com.kidlink.beacon.push.PushClient;
 import com.kidlink.beacon.service.BeaconForegroundService;
 import com.kidlink.beacon.ui.widget.Feedback;
@@ -957,6 +958,10 @@ public class MainActivity extends AppCompatActivity {
         p.approachFired = true;
         BeaconPrefs.setApproachInside(this, beaconId, true);
 
+        // 指定 WiFi 不推送（家里 / 公司这类已知不用提醒的地方）。
+        // 状态照常落下 —— 这次进入就不再补推了，只是不发请求出去。
+        if (WifiGate.blocked(this)) return;
+
         final java.util.List<String> tokens = BeaconPrefs.getEnabledTokenValues(this);
         if (tokens.isEmpty()) return;
         if (inApproachCooldown(beaconId) || inApproachGap()) return;
@@ -1027,6 +1032,10 @@ public class MainActivity extends AppCompatActivity {
         // 进区：先落状态，冷却中 / 今天不推也不会在之后再补一条
         p.arrivedFired = true;
         BeaconPrefs.setArrivalInside(this, beaconId, true);
+
+        // 指定 WiFi 不推送：这里同样先落状态再判断，
+        // 免得「在家被屏蔽」这件事在换了网络之后又补推一条迟到的「接到」
+        if (WifiGate.blocked(this)) return;
 
         final java.util.List<String> tokens = BeaconPrefs.getEnabledTokenValues(this);
         if (tokens.isEmpty()) return;

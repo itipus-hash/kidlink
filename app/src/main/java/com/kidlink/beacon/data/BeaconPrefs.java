@@ -74,6 +74,13 @@ public class BeaconPrefs {
     private static final String KEY_EXIT_AFTER_ARRIVAL = "exit_after_arrival";
     /** 冷启动后自动退到后台（默认关） */
     private static final String KEY_AUTO_MINIMIZE = "auto_minimize";
+    /**
+     * 「指定 WiFi 不推送」名单，存 JSON 数组，元素就是 WiFi 名称。
+     *
+     * 为空 = 不做这层判断。名字是用户自己加进来的，所以按字符串精确比对
+     * （忽略大小写），不做模糊匹配 —— 免得「Home」把「Home-5G」也一起屏蔽了。
+     */
+    private static final String KEY_WIFI_BLOCK = "wifi_block";
 
     private BeaconPrefs() {}
 
@@ -559,5 +566,50 @@ public class BeaconPrefs {
 
     public static void setAutoMinimize(Context ctx, boolean on) {
         sp(ctx).edit().putBoolean(KEY_AUTO_MINIMIZE, on).apply();
+    }
+
+    // === 指定 WiFi 不推送 ===
+
+    /** 名单里的 WiFi 名称，顺序就是设置页里的显示顺序；没配过返回空列表 */
+    public static java.util.List<String> getWifiBlockList(Context ctx) {
+        java.util.List<String> list = new java.util.ArrayList<>();
+        String raw = sp(ctx).getString(KEY_WIFI_BLOCK, "");
+        if (raw == null || raw.trim().isEmpty()) return list;
+        try {
+            org.json.JSONArray arr = new org.json.JSONArray(raw);
+            for (int i = 0; i < arr.length(); i++) {
+                String name = arr.optString(i, "").trim();
+                if (name.isEmpty()) continue;
+                if (!containsSsid(list, name)) list.add(name);
+            }
+        } catch (Exception ignored) {
+        }
+        return list;
+    }
+
+    public static void setWifiBlockList(Context ctx, java.util.List<String> list) {
+        org.json.JSONArray arr = new org.json.JSONArray();
+        if (list != null) {
+            for (String s : list) {
+                if (s == null) continue;
+                String name = s.trim();
+                if (name.isEmpty()) continue;
+                arr.put(name);
+            }
+        }
+        sp(ctx).edit().putString(KEY_WIFI_BLOCK, arr.toString()).apply();
+    }
+
+    /** 这个 WiFi 名是否在名单里（忽略大小写、忽略首尾空格） */
+    public static boolean isWifiBlocked(Context ctx, String ssid) {
+        if (ssid == null || ssid.trim().isEmpty()) return false;
+        return containsSsid(getWifiBlockList(ctx), ssid.trim());
+    }
+
+    private static boolean containsSsid(java.util.List<String> list, String ssid) {
+        for (String s : list) {
+            if (s != null && s.equalsIgnoreCase(ssid)) return true;
+        }
+        return false;
     }
 }

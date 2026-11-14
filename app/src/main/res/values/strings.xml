@@ -228,6 +228,27 @@
     <string name="got_it">知道了</string>
     <string name="open_settings_failed">无法打开系统设置，请手动进入</string>
 
+    <!-- 指定 WiFi 不推送（系统设置内） -->
+    <string name="settings_wifi_block">指定 WiFi 不推送</string>
+    <string name="wifi_block_value_none">未设置</string>
+    <string name="wifi_block_value_count">已添加 %d 个</string>
+    <string name="wifi_block_hint_blocked">连着名单里的 WiFi 时不推送提醒。当前 WiFi：%s（此刻不推送）</string>
+    <string name="wifi_block_hint_normal">连着名单里的 WiFi 时不推送提醒。当前 WiFi：%s</string>
+    <string name="wifi_block_hint_off">连着名单里的 WiFi 时不推送提醒。当前未连接 WiFi</string>
+    <string name="wifi_block_dialog_title">指定 WiFi 不推送</string>
+    <string name="wifi_block_dialog_msg">连上名单里的 WiFi 时，完全不推送任何提醒 —— 适合家里、公司这类「人在那儿本来就不用提醒」的地方。\n只影响推送，界面上的距离和图标照常显示。\n\nWiFi 名称要系统「位置信息」权限才能读到，读不到时会显示「未连接」。</string>
+    <string name="wifi_block_current">当前 WiFi：%s</string>
+    <string name="wifi_block_current_none">当前 WiFi：未连接</string>
+    <string name="wifi_block_add_current">＋ 添加当前 WiFi</string>
+    <string name="wifi_block_empty">还没有添加 WiFi。点下面的按钮把当前连的 WiFi 加进来。</string>
+    <string name="wifi_block_done">完成</string>
+    <string name="wifi_block_added">已添加「%s」</string>
+    <string name="wifi_block_removed">已移除「%s」</string>
+    <string name="wifi_block_exists">「%s」已经在名单里了</string>
+    <string name="wifi_block_no_ssid">没连 WiFi，或者暂时读不到 WiFi 名称</string>
+    <string name="wifi_block_location_off">系统的「位置信息」关着，读不到 WiFi 名称，先打开再试</string>
+    <string name="wifi_block_need_location">需要「位置信息」权限才能读到 WiFi 名称</string>
+
     <!-- 开源免费 / 自愿捐赠（设置页最底部，常驻不折叠） -->    <string name="donate_title">开源免费</string>
     <string name="donate_body">本项目完全免费开源，无付费解锁、无强制收费，所有功能都可以直接使用。\n\n如果觉得对你有帮助，可以自愿支持。捐献只代表心意，不会解锁任何功能，也不会因此获得新版本、新特性或优先支持。\n\n有任何建议、想法或问题，也欢迎发到上面的邮箱。</string>
     <string name="donate_mail">支付宝：supit@163.com</string>
