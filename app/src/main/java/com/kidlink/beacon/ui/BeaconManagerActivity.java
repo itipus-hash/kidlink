@@ -57,9 +57,19 @@ public class BeaconManagerActivity extends AppCompatActivity {
     private static final int TYPE_ADD = 1;
     private static final long HOLD_MS = 500L;
 
+    /**
+     * 一个信标都没有时，底部那条推荐里给的淘宝链接。
+     *
+     * 放在这里而不是首页：用户「手里没硬件」这件事，是在信标管理页发现的 ——
+     * 进来一看是空的，这时候顺手给型号最合适。
+     */
+    private static final String SHOP_URL = "https://m.tb.cn/h.j9RiIck";
+
     private BeaconDbHelper dbHelper;
     private BeaconAdapter adapter;
     private RecyclerView recyclerView;
+    /** 空状态里的购买建议整块（有信标就隐藏） */
+    private View layoutBuyTip;
     /** 已选中的信标 id，最多 BeaconPrefs.MAX_SELECTED 个 */
     private List<Long> selectedIds = new ArrayList<>();
 
@@ -89,6 +99,11 @@ public class BeaconManagerActivity extends AppCompatActivity {
 
         adapter = new BeaconAdapter();
         recyclerView.setAdapter(adapter);
+
+        // 空状态里的购买建议：整块可点去淘宝，内层那行单独可点看协议说明
+        layoutBuyTip = findViewById(R.id.layout_buy_tip);
+        layoutBuyTip.setOnClickListener(v -> openShop());
+        findViewById(R.id.txt_buy_proto).setOnClickListener(v -> showProtocolDialog());
 
         requestPermissions();
         reload();
@@ -127,7 +142,33 @@ public class BeaconManagerActivity extends AppCompatActivity {
     private void reload() {
         BeaconPrefs.ensureAutoSelect(this, dbHelper);
         selectedIds = BeaconPrefs.getSelectedIds(this);
-        adapter.setData(dbHelper.getAllBeacons());
+        List<BeaconEntity> all = dbHelper.getAllBeacons();
+        adapter.setData(all);
+        if (layoutBuyTip != null) {
+            layoutBuyTip.setVisibility(all.isEmpty() ? View.VISIBLE : View.GONE);
+        }
+    }
+
+    /**
+     * 空状态里那条购买建议跳淘宝。
+     * 这个 APP 装完是空的，第一道门槛不在软件里，而在于手里得有颗 iBeacon ——
+     * 与其让人自己去找兼容型号，不如把用过的那颗直接摆出来。
+     */
+    private void openShop() {
+        try {
+            startActivity(new Intent(Intent.ACTION_VIEW, android.net.Uri.parse(SHOP_URL)));
+        } catch (Exception e) {
+            Feedback.show(this, R.string.open_shop_failed);
+        }
+    }
+
+    /** 「为什么只支持 iBeacon」：买错硬件的代价比读一段字大，所以写在界面上 */
+    private void showProtocolDialog() {
+        new MaterialAlertDialogBuilder(this)
+                .setTitle(R.string.protocol_title)
+                .setMessage(R.string.protocol_body)
+                .setPositiveButton(R.string.got_it, null)
+                .show();
     }
 
     private void tip(CharSequence text) {

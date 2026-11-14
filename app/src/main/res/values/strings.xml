@@ -10,7 +10,7 @@
 
     <!-- 没有信标时的购买建议（仅空状态显示） -->
     <string name="buy_beacon_title">还没有信标？可以先买这个</string>
-    <string name="buy_beacon_name">大夏龙雀 iBeacon 基站 · 防水型\n短距离室内定位 / 打卡 / 资产追踪 · 到手价 ¥13.90 包邮</string>
+    <string name="buy_beacon_name">大夏龙雀 iBeacon 基站 · 防水型</string>
     <string name="buy_beacon_action">点这里去淘宝下单 ›</string>
     <string name="buy_beacon_proto">⚠ 只支持 iBeacon 协议 · 点这里看为什么</string>
     <string name="protocol_title">为什么只支持 iBeacon</string>
