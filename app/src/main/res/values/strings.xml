@@ -302,7 +302,7 @@
     <string name="open_settings_failed">无法打开系统设置，请手动进入</string>
 
     <!-- 开源免费 / 自愿捐赠（设置页最底部，常驻不折叠） -->    <string name="donate_title">开源免费</string>
-    <string name="donate_body">本项目完全免费开源，无付费解锁、无强制收费，所有功能都可以直接使用。\n\n如果觉得对你有帮助，可以自愿支持。捐献只代表心意，不会解锁任何功能，也不会因此获得新版本、新特性或优先支持。</string>
+    <string name="donate_body">本项目完全免费开源，无付费解锁、无强制收费，所有功能都可以直接使用。\n\n如果觉得对你有帮助，可以自愿支持。捐献只代表心意，不会解锁任何功能，也不会因此获得新版本、新特性或优先支持。\n\n有任何建议、想法或问题，也欢迎发到上面的邮箱。</string>
     <string name="donate_mail">支付宝：supit@163.com</string>
     <string name="donate_tap_hint">轻触复制邮箱 · 仅自愿捐赠，不承诺售后、定制、优先服务</string>
     <string name="donate_copied">已复制 supit@163.com</string>
