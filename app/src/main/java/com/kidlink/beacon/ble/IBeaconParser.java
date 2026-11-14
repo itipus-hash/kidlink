@@ -122,4 +122,56 @@ public class IBeaconParser {
         String u2 = uuid2.replace("-", "").toUpperCase();
         return u1.equals(u2);
     }
+
+    /**
+     * 对一条原始广播做判读，给扫描页的「原始广播」用。
+     *
+     * 为什么要它：远程用户说「扫不到」时，只有一句「扫不到」是没法定位的 ——
+     * 可能是没收到包（手机/权限问题），可能是收到了但格式不对（设备问题），
+     * 也可能是格式对但我们没解出来（我们的问题）。这三种在 hex 上长得完全不一样，
+     * 一眼判出来才能让对方知道该改哪一头。
+     */
+    public static String diagnose(byte[] scanData) {
+        if (scanData == null || scanData.length < 2) return "空广播";
+
+        int offset = 0;
+        boolean sawApple = false;
+        String appleDetail = null;
+
+        while (offset + 1 < scanData.length) {
+            int length = scanData[offset] & 0xFF;
+            if (length == 0) break;
+            if (offset + length >= scanData.length) {
+                return String.format("长度字节 %02X 超出包长，数据被截断", length);
+            }
+            int type = scanData[offset + 1] & 0xFF;
+
+            if (type == 0xFF && length >= 4) {
+                int companyId = ((scanData[offset + 3] & 0xFF) << 8) | (scanData[offset + 2] & 0xFF);
+                if (companyId == APPLE_COMPANY_ID) {
+                    sawApple = true;
+                    if (length >= MIN_MANUFACTURER_AD_LENGTH && offset + 6 < scanData.length) {
+                        int subType = scanData[offset + 4] & 0xFF;
+                        int subLength = scanData[offset + 5] & 0xFF;
+                        if (subType == IBEACON_SUB_TYPE && subLength == IBEACON_SUB_LENGTH) {
+                            IBeaconData d = parse(scanData, -60);
+                            return d == null
+                                    ? "iBeacon 帧头正常，但 payload 解析失败"
+                                    : "iBeacon ✓ " + d.uuid + "  " + d.major + "/" + d.minor;
+                        }
+                        appleDetail = String.format(
+                                "Apple 厂商数据，但帧头是 %02X %02X（标准应为 02 15）",
+                                subType, subLength);
+                    } else {
+                        appleDetail = String.format(
+                                "Apple 厂商数据，长度字节 %02X 偏短（标准应为 1A）", length);
+                    }
+                }
+            }
+            offset += (length + 1);
+        }
+
+        if (sawApple) return appleDetail == null ? "Apple 厂商数据，结构异常" : appleDetail;
+        return "没有厂商自定义数据（FF），不是 iBeacon";
+    }
 }

@@ -126,7 +126,8 @@ public class ScanBeaconActivity extends AppCompatActivity {
                 try {
                     if (scanResult.getScanRecord() != null) {
                         adv.name = scanResult.getScanRecord().getDeviceName();
-                        adv.hex = BeaconScanner.toHex(scanResult.getScanRecord().getBytes());
+                        adv.raw = scanResult.getScanRecord().getBytes();
+                        adv.hex = BeaconScanner.toHex(adv.raw);
                     }
                     if (adv.name == null || adv.name.trim().isEmpty()) {
                         adv.name = scanResult.getDevice().getName();
@@ -293,6 +294,7 @@ public class ScanBeaconActivity extends AppCompatActivity {
         String name;
         int rssi;
         String hex;
+        byte[] raw;
     }
 
     /**
@@ -313,7 +315,10 @@ public class ScanBeaconActivity extends AppCompatActivity {
         for (RawAdv a : list) {
             sb.append(a.name != null && !a.name.trim().isEmpty() ? a.name.trim() : "(无名)");
             sb.append("  ").append(a.mac).append("  ").append(a.rssi).append("dBm\n");
-            sb.append(a.hex == null || a.hex.isEmpty() ? "(空)" : a.hex).append("\n\n");
+            sb.append(a.hex == null || a.hex.isEmpty() ? "(空)" : a.hex).append("\n");
+            // 每条后面直接给结论：收到包但没解出来 = 设备格式问题；连包都没收到 = 手机侧问题
+            sb.append("    → ").append(com.kidlink.beacon.ble.IBeaconParser.diagnose(a.raw))
+                    .append("\n\n");
         }
         final String dump = sb.toString();
 

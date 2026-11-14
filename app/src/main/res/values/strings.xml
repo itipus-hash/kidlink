@@ -178,7 +178,7 @@ Eddystone（Google 的另一套格式）和普通蓝牙设备做不到这点：
 
     <!-- BLE scan to add -->
     <string name="scan_beacon_title">扫描信标</string>
-    <string name="scan_beacon_empty">正在搜索附近的 iBeacon…\n请让信标上电并靠近手机</string>
+    <string name="scan_beacon_empty">正在搜索附近的 iBeacon…\n请让信标上电并靠近手机\n若一直是 0 台，检查蓝牙和系统「位置信息」是否打开</string>
     <string name="scan_beacon_none_found">没有发现信标\n请确认信标已上电并在附近</string>
     <string name="scan_beacon_unknown">未命名信标 %d/%d</string>
     <string name="scan_beacon_saved">已添加「%s」</string>
