@@ -309,6 +309,23 @@ public class BeaconDbHelper extends SQLiteOpenHelper {
     }
 
     /**
+     * 把所有还没归属的信标一并挂到某个娃下面。
+     *
+     * 用在「在某个娃的分组里点了 + 添加」之后：新扫进来的那颗必须先落进用户
+     * 点的那一组，否则 ensureChildren() 会把它塞给第一个娃 —— 在「奥数包」那一组
+     * 点加号，结果信标跑到隔壁娃下面去，这是最容易被当成 bug 的行为。
+     */
+    public void assignUnassignedTo(long childId) {
+        if (childId <= 0) return;
+        try {
+            getWritableDatabase().execSQL(
+                    "UPDATE " + TABLE_BEACONS + " SET " + COL_CHILD_ID + " = " + childId
+                            + " WHERE " + COL_CHILD_ID + " <= 0");
+        } catch (Exception ignored) {
+        }
+    }
+
+    /**
      * 保证每颗信标都有归属的娃 —— 首页每次加载前调一次。
      *
      * 规则只有两条：

@@ -24,6 +24,7 @@ import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.content.ContextCompat;
+import androidx.core.widget.NestedScrollView;
 import androidx.recyclerview.widget.GridLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
@@ -34,24 +35,38 @@ import com.kidlink.beacon.R;
 import com.kidlink.beacon.data.BeaconDbHelper;
 import com.kidlink.beacon.data.BeaconEntity;
 import com.kidlink.beacon.data.BeaconPrefs;
+import com.kidlink.beacon.data.ChildEntity;
 import com.kidlink.beacon.ui.widget.Feedback;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 
 /**
- * 蓝牙信标管理界面
+ * 蓝牙信标管理界面 —— 按娃分组。
  *
- * 网格手势（按下即滑就拖，三种手势互不打架）：
- * - 点按（未移动就松手）→ 打开信标信息（和长按一样）
- * - 移动超过 touchSlop → 拖动排序（占位格永远是最后一格）
- * - 按住不动 ≥500ms → 打开信标信息
+ * 页面结构（运行时由 rebuildGroups() 拼出来）：
+ * <pre>
+ *   许小鱼  2 颗                       ▾
+ *   [书包]  [奥数包]
+ *   [ + 添加到许小鱼 ]
  *
- * 「哪颗信标属于哪个娃、代表哪个包」不是在这一层选的，而是进信标信息里设的 ——
- * 归属是低频操作，摆在外面对着网格点来点去，很容易误触成排序。
+ *   许大鱼  1 颗                       ▸      ← 折叠起来只剩这一行
  *
- * 最后一格永远是 [+ 添加] 占位格：点击弹出「蓝牙扫描 / 扫码导入」选择。
+ *   ＋ 新建一个娃
+ * </pre>
+ *
+ * 一个娃一个分组，一个分组一个两列网格：
+ * - 点分组头 → 折叠 / 展开（状态存 prefs，下次进来还是那样）
+ * - 长按分组头 → 改名 / 删除这个娃
+ * - 网格最后一格永远是「+ 添加」，点了扫进来的信标**直接归这一组**
+ * - 卡片点一下进信标信息（所属娃 / 场景标签 / 清冷却 / 删除都在里面）
+ * - 按住卡片上下滑 = 组内拖动排序
+ *
+ * 跨组移动不做拖拽：把一个娃的卡片拖到另一个娃那里，和组内排序的手势太容易冲突，
+ * 而且跨组移动是低频操作 —— 进信息页选「所属娃」更明确。
  */
 public class BeaconManagerActivity extends AppCompatActivity {
 
@@ -68,14 +83,22 @@ public class BeaconManagerActivity extends AppCompatActivity {
     private static final String SHOP_URL = "https://m.tb.cn/h.j9RiIck";
 
     private BeaconDbHelper dbHelper;
-    private BeaconAdapter adapter;
-    private RecyclerView recyclerView;
+    /** 所有分组的容器，每次 reload 全量重建 */
+    private LinearLayout layoutGroups;
+    private NestedScrollView scrollGroups;
+    /** 新建娃（只在已经有娃时显示） */
+    private View btnNewChild;
     /** 空状态里的购买建议整块（有信标就隐藏） */
     private View layoutBuyTip;
-    /** children.id → 娃名，卡片第二行要用，reload 时刷一次就够 */
-    private final java.util.Map<Long, String> childNames = new java.util.HashMap<>();
+    /** children.id → 娃名 */
+    private final Map<Long, String> childNames = new HashMap<>();
     /** 当前打开的信标信息弹窗 —— 点「所属娃 / 场景标签」前要先关掉，免得弹窗叠弹窗 */
     private androidx.appcompat.app.AlertDialog infoDialog;
+    /**
+     * 从哪一组点的「+ 添加」。
+     * 扫完 / 扫完码回来时，把还没归属的新信标挂到这个娃下面。
+     */
+    private long pendingChildId = 0;
 
     private final Handler handler = new Handler(Looper.getMainLooper());
 
@@ -85,7 +108,14 @@ public class BeaconManagerActivity extends AppCompatActivity {
 
     private final ActivityResultLauncher<Intent> resultLauncher =
             registerForActivityResult(new ActivityResultContracts.StartActivityForResult(),
-                    result -> reload());
+                    result -> {
+                        if (result.getResultCode() == RESULT_OK && pendingChildId > 0) {
+                            // 先认领再 ensureChildren —— 否则新信标会被塞给第一个娃
+                            dbHelper.assignUnassignedTo(pendingChildId);
+                        }
+                        pendingChildId = 0;
+                        reload();
+                    });
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -97,11 +127,10 @@ public class BeaconManagerActivity extends AppCompatActivity {
         MaterialToolbar toolbar = findViewById(R.id.toolbar);
         toolbar.setNavigationOnClickListener(v -> finish());
 
-        recyclerView = findViewById(R.id.recycler_beacons);
-        recyclerView.setLayoutManager(new GridLayoutManager(this, 2));
-
-        adapter = new BeaconAdapter();
-        recyclerView.setAdapter(adapter);
+        layoutGroups = findViewById(R.id.layout_groups);
+        scrollGroups = findViewById(R.id.scroll_groups);
+        btnNewChild = findViewById(R.id.btn_new_child);
+        btnNewChild.setOnClickListener(v -> askNewChild(null));
 
         // 空状态里的购买建议：整块可点去淘宝，内层那行单独可点看协议说明
         layoutBuyTip = findViewById(R.id.layout_buy_tip);
@@ -116,11 +145,6 @@ public class BeaconManagerActivity extends AppCompatActivity {
     protected void onResume() {
         super.onResume();
         reload();
-    }
-
-    @Override
-    protected void onPause() {
-        super.onPause();
     }
 
     private void requestPermissions() {
@@ -142,25 +166,94 @@ public class BeaconManagerActivity extends AppCompatActivity {
         }
     }
 
+    // === 分组重建 ===
+
+    /**
+     * 整页按「娃 → 信标」重拼一遍。
+     *
+     * 全量重建而不是局部刷新：娃和信标的数量都很少（个位数），
+     * 重建几十个 View 的开销远小于维护增量更新的复杂度 ——
+     * 改名、改归属、删娃、加信标全走这一条路径，不容易出现「某处忘了刷新」。
+     */
     private void reload() {
-        // 每颗信标都必须挂在某个娃下面，卡片第二行才有东西可显示
+        // 每颗信标都必须挂在某个娃下面；没有娃就用第一颗信标名建一个
         dbHelper.ensureChildren();
+
+        List<ChildEntity> children = dbHelper.getAllChildren();
         childNames.clear();
-        for (com.kidlink.beacon.data.ChildEntity c : dbHelper.getAllChildren()) {
+        for (ChildEntity c : children) {
             childNames.put(c.getId(), c.displayName());
         }
         List<BeaconEntity> all = dbHelper.getAllBeacons();
-        adapter.setData(all);
-        if (layoutBuyTip != null) {
-            layoutBuyTip.setVisibility(all.isEmpty() ? View.VISIBLE : View.GONE);
+
+        // 重建会导致滚动位置回到顶部，先记下来，重建后补回去
+        final int scrollY = scrollGroups == null ? 0 : scrollGroups.getScrollY();
+        layoutGroups.removeAllViews();
+
+        if (children.isEmpty()) {
+            // 一颗信标都没有：没有分组可显示，只留购买建议
+            layoutGroups.setVisibility(View.GONE);
+        } else {
+            layoutGroups.setVisibility(View.VISIBLE);
+            for (ChildEntity c : children) {
+                addGroupView(c, dbHelper.getBeaconsByChild(c.getId()));
+            }
+        }
+
+        // 「新建一个娃」只在一个娃都没有之外的场景有意义：
+        // 没有信标时娃是自动建的，先建空娃什么也做不了
+        btnNewChild.setVisibility(children.isEmpty() ? View.GONE : View.VISIBLE);
+        layoutBuyTip.setVisibility(all.isEmpty() ? View.VISIBLE : View.GONE);
+
+        if (scrollGroups != null) {
+            scrollGroups.post(() -> scrollGroups.scrollTo(0, scrollY));
         }
     }
 
-    /**
-     * 空状态里那条购买建议跳淘宝。
-     * 这个 APP 装完是空的，第一道门槛不在软件里，而在于手里得有颗 iBeacon ——
-     * 与其让人自己去找兼容型号，不如把用过的那颗直接摆出来。
-     */
+    /** 拼一个娃的分组：分组头 + 两列网格（最后一格是「+ 添加」） */
+    private void addGroupView(ChildEntity child, List<BeaconEntity> beacons) {
+        final boolean collapsed = BeaconPrefs.isChildCollapsed(this, child.getId());
+
+        View header = LayoutInflater.from(this)
+                .inflate(R.layout.item_child_header, layoutGroups, false);
+        TextView name = header.findViewById(R.id.txt_child_name);
+        TextView count = header.findViewById(R.id.txt_child_count);
+        final TextView chevron = header.findViewById(R.id.txt_chevron);
+
+        name.setText(child.displayName());
+        count.setText(getString(R.string.child_beacon_count, beacons.size()));
+        chevron.setText(collapsed ? R.string.chevron_collapsed : R.string.chevron_expanded);
+
+        final RecyclerView rv = new RecyclerView(this);
+        rv.setLayoutManager(new GridLayoutManager(this, 2));
+        rv.setNestedScrollingEnabled(false);
+        rv.setOverScrollMode(View.OVER_SCROLL_NEVER);
+        rv.setClipToPadding(false);
+        rv.setPadding(dp(6), 0, dp(6), 0);
+        rv.setLayoutParams(new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        BeaconAdapter adapter = new BeaconAdapter(child, rv);
+        adapter.setData(beacons);
+        rv.setAdapter(adapter);
+        rv.setVisibility(collapsed ? View.GONE : View.VISIBLE);
+
+        header.setOnClickListener(v -> {
+            boolean nowCollapsed = !BeaconPrefs.isChildCollapsed(this, child.getId());
+            BeaconPrefs.setChildCollapsed(this, child.getId(), nowCollapsed);
+            chevron.setText(nowCollapsed
+                    ? R.string.chevron_collapsed : R.string.chevron_expanded);
+            rv.setVisibility(nowCollapsed ? View.GONE : View.VISIBLE);
+        });
+        header.setOnLongClickListener(v -> {
+            showChildMenu(child);
+            return true;
+        });
+
+        layoutGroups.addView(header);
+        layoutGroups.addView(rv);
+    }
+
     private void openShop() {
         try {
             startActivity(new Intent(Intent.ACTION_VIEW, android.net.Uri.parse(SHOP_URL)));
@@ -188,42 +281,42 @@ public class BeaconManagerActivity extends AppCompatActivity {
 
     // === 添加 ===
 
-    /**
-     * 点击 + 占位格：让用户选择添加方式
-     */
-    private void showAddOptions() {
+    private void showAddOptions(ChildEntity child) {
+        final CharSequence[] items = {
+                getString(R.string.add_by_ble),
+                getString(R.string.add_by_qr)
+        };
         new MaterialAlertDialogBuilder(this)
                 .setTitle(R.string.add_beacon)
-                .setItems(new CharSequence[]{
-                        getString(R.string.add_by_ble),
-                        getString(R.string.add_by_qr)
-                }, (dialog, which) -> {
+                .setItems(items, (dialog, which) -> {
                     if (which == 0) {
-                        startBleScan();
+                        startBleScan(child);
                     } else {
-                        startQrScan();
+                        startQrScan(child);
                     }
                 })
                 .setNegativeButton(R.string.cancel, null)
                 .show();
     }
 
-    private void startBleScan() {
+    private void startBleScan(ChildEntity child) {
         if (!hasBlePermission()) {
             requestPermissions();
             tip(getString(R.string.perm_bluetooth));
             return;
         }
+        pendingChildId = child == null ? 0 : child.getId();
         resultLauncher.launch(new Intent(this, ScanBeaconActivity.class));
     }
 
-    private void startQrScan() {
+    private void startQrScan(ChildEntity child) {
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
                 != PackageManager.PERMISSION_GRANTED) {
             requestPermissions();
             tip(getString(R.string.perm_camera));
             return;
         }
+        pendingChildId = child == null ? 0 : child.getId();
         resultLauncher.launch(new Intent(this, QRScanActivity.class));
     }
 
@@ -238,17 +331,87 @@ public class BeaconManagerActivity extends AppCompatActivity {
                 == PackageManager.PERMISSION_GRANTED;
     }
 
+    // === 娃的改名 / 删除 ===
+
+    private void showChildMenu(ChildEntity child) {
+        final CharSequence[] items = {
+                getString(R.string.child_rename),
+                getString(R.string.child_delete)
+        };
+        new MaterialAlertDialogBuilder(this)
+                .setTitle(child.displayName())
+                .setItems(items, (d, which) -> {
+                    if (which == 0) {
+                        askRenameChild(child);
+                    } else {
+                        confirmDeleteChild(child);
+                    }
+                })
+                .setNegativeButton(R.string.cancel, null)
+                .show();
+    }
+
+    private void askRenameChild(ChildEntity child) {
+        EditText input = new EditText(this);
+        input.setText(child.getName());
+        input.setSelection(input.getText().length());
+        input.setHint(R.string.info_child_hint);
+        input.setSingleLine(true);
+
+        new MaterialAlertDialogBuilder(this)
+                .setTitle(R.string.child_rename)
+                .setView(wrapInPadding(input))
+                .setNegativeButton(R.string.cancel, null)
+                .setPositiveButton(R.string.save, (d, w) -> {
+                    String name = input.getText().toString().trim();
+                    if (name.isEmpty()) {
+                        tip(getString(R.string.rename_empty));
+                        return;
+                    }
+                    dbHelper.renameChild(child.getId(), name);
+                    reload();
+                })
+                .show();
+    }
+
+    /**
+     * 删娃。删的是分组，不是信标 —— 名下的信标会并到剩下的第一个娃下面。
+     * 所以「只剩一个娃且名下有信标」时不允许删：否则信标没地方可去，
+     * 下次 ensureChildren() 又会拿第一颗信标名建一个出来，等于白删。
+     */
+    private void confirmDeleteChild(ChildEntity child) {
+        List<ChildEntity> children = dbHelper.getAllChildren();
+        List<BeaconEntity> owned = dbHelper.getBeaconsByChild(child.getId());
+
+        if (children.size() <= 1 && !owned.isEmpty()) {
+            tipLong(getString(R.string.child_delete_last));
+            return;
+        }
+
+        String msg = owned.isEmpty()
+                ? getString(R.string.child_delete_msg_empty, child.displayName())
+                : getString(R.string.child_delete_msg, child.displayName(), owned.size());
+
+        new MaterialAlertDialogBuilder(this)
+                .setTitle(R.string.child_delete)
+                .setMessage(msg)
+                .setNegativeButton(R.string.cancel, null)
+                .setPositiveButton(R.string.child_delete, (d, w) -> {
+                    dbHelper.deleteChild(child.getId());
+                    reload();
+                    tip(getString(R.string.child_deleted, child.displayName()));
+                })
+                .show();
+    }
+
     // === 归属（娃 / 场景标签） ===
 
     /**
-     * 卡片第二行：「许小鱼」或「许小鱼 · 奥数」。
-     * 一眼能看出这颗信标在谁的哪个包上，不用挨个点进信息页确认。
+     * 卡片第二行：场景标签。
+     * 分组头已经写了娃名，卡片里再写一遍纯属重复，所以这里只留标签。
      */
     private String tagOf(BeaconEntity b) {
-        String childName = childNames.get(b.getChildId());
-        if (childName == null) childName = "";
-        if (childName.isEmpty()) return b.getLabel();
-        return b.hasLabel() ? childName + " · " + b.getLabel() : childName;
+        return b.getLabel();
     }
 
     /**
@@ -258,7 +421,7 @@ public class BeaconManagerActivity extends AppCompatActivity {
      * 意识到「这个娃还没建过」，让他退出再找入口不如就地建。
      */
     private void pickChild(BeaconEntity b) {
-        final List<com.kidlink.beacon.data.ChildEntity> children = dbHelper.getAllChildren();
+        final List<ChildEntity> children = dbHelper.getAllChildren();
         final CharSequence[] items = new CharSequence[children.size() + 1];
         for (int i = 0; i < children.size(); i++) {
             items[i] = children.get(i).displayName();
@@ -269,7 +432,7 @@ public class BeaconManagerActivity extends AppCompatActivity {
                 .setTitle(R.string.info_child_title)
                 .setItems(items, (d, which) -> {
                     if (which < children.size()) {
-                        com.kidlink.beacon.data.ChildEntity target = children.get(which);
+                        ChildEntity target = children.get(which);
                         dbHelper.setBeaconChild(b.getId(), target.getId());
                         reload();
                         tip(getString(R.string.info_child_moved, target.displayName()));
@@ -281,7 +444,13 @@ public class BeaconManagerActivity extends AppCompatActivity {
                 .show();
     }
 
-    private void askNewChild(BeaconEntity b) {
+    /**
+     * 新建一个娃。
+     *
+     * @param beacon 建完把这个信标移进去；传 null 表示只建个空分组
+     *               （从页面底部「＋ 新建一个娃」进来就是这种）
+     */
+    private void askNewChild(BeaconEntity beacon) {
         EditText input = new EditText(this);
         input.setHint(R.string.info_child_hint);
         input.setSingleLine(true);
@@ -301,9 +470,14 @@ public class BeaconManagerActivity extends AppCompatActivity {
                         tip(getString(R.string.info_child_new_failed));
                         return;
                     }
-                    dbHelper.setBeaconChild(b.getId(), id);
-                    reload();
-                    tip(getString(R.string.info_child_moved, name));
+                    if (beacon != null) {
+                        dbHelper.setBeaconChild(beacon.getId(), id);
+                        reload();
+                        tip(getString(R.string.info_child_moved, name));
+                    } else {
+                        reload();
+                        tip(getString(R.string.child_created, name));
+                    }
                 })
                 .show();
     }
@@ -335,40 +509,13 @@ public class BeaconManagerActivity extends AppCompatActivity {
                 .show();
     }
 
-    // === 自定义名称 ===
-
-    private void showRenameDialog(BeaconEntity b) {
-        EditText input = new EditText(this);
-        input.setText(b.getName());
-        input.setSelection(input.getText().length());
-        input.setHint(R.string.rename_hint);
-        input.setSingleLine(true);
-
-        new MaterialAlertDialogBuilder(this)
-                .setTitle(R.string.rename_title)
-                .setView(wrapInPadding(input))
-                .setNegativeButton(R.string.cancel, null)
-                .setPositiveButton(R.string.save, (d, w) -> {
-                    String name = input.getText().toString().trim();
-                    if (name.isEmpty()) {
-                        tip(getString(R.string.rename_empty));
-                        return;
-                    }
-                    b.setName(name);
-                    dbHelper.updateBeacon(b);
-                    reload();
-                })
-                .show();
-    }
-
     // === 推送冷却 / 信标信息 ===
 
     /**
      * 清除这个信标的推送冷却。
-     * 冷却时间是按信标分开记的，两个信标互不影响 —— 这里只清当前这个。
+     * 冷却时间是按娃分开记的，所以清的是这个信标所属娃的冷却。
      */
     private void resetPushCooldown(BeaconEntity b) {
-        // 冷却按娃算（一趟带的两个包只推一条），所以清的是这个娃的冷却
         long childId = b.getChildId();
         long last = Math.max(BeaconPrefs.getLastPushAtByChild(this, childId),
                 BeaconPrefs.getLastApproachAtByChild(this, childId));
@@ -388,7 +535,6 @@ public class BeaconManagerActivity extends AppCompatActivity {
 
     /**
      * 信标信息：归属 / 场景标签 / UUID / Major·Minor·蓝牙地址 / 上次推送·冷却，底部一排操作。
-     * 长按卡片直接进这里，点击卡片也进这里。
      */
     private void showBeaconInfo(BeaconEntity b) {
         LinearLayout box = new LinearLayout(this);
@@ -487,6 +633,32 @@ public class BeaconManagerActivity extends AppCompatActivity {
         dialog.show();
     }
 
+    // === 自定义名称 ===
+
+    private void showRenameDialog(BeaconEntity b) {
+        EditText input = new EditText(this);
+        input.setText(b.getName());
+        input.setSelection(input.getText().length());
+        input.setHint(R.string.rename_hint);
+        input.setSingleLine(true);
+
+        new MaterialAlertDialogBuilder(this)
+                .setTitle(R.string.rename_title)
+                .setView(wrapInPadding(input))
+                .setNegativeButton(R.string.cancel, null)
+                .setPositiveButton(R.string.save, (d, w) -> {
+                    String name = input.getText().toString().trim();
+                    if (name.isEmpty()) {
+                        tip(getString(R.string.rename_empty));
+                        return;
+                    }
+                    b.setName(name);
+                    dbHelper.updateBeacon(b);
+                    reload();
+                })
+                .show();
+    }
+
     private LinearLayout actionRow() {
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
@@ -513,7 +685,6 @@ public class BeaconManagerActivity extends AppCompatActivity {
 
     /**
      * 一行「可点的设置项」：灰色小标签 + 加粗的主色值。
-     * 和只读的 addInfoRow 区分开 —— 这两行（所属娃 / 场景标签）是能改的，
      * 用主色 + 点击涟漪暗示它可点，不用另外加按钮。
      */
     private void addPickerRow(LinearLayout parent, int labelRes, String value,
@@ -552,7 +723,8 @@ public class BeaconManagerActivity extends AppCompatActivity {
     }
 
     /** 一行信息：上面一句灰色小标签，下面一行可长按复制的值 */
-    private void addInfoRow(LinearLayout parent, int labelRes, String value, boolean mono) {        TextView label = new TextView(this);
+    private void addInfoRow(LinearLayout parent, int labelRes, String value, boolean mono) {
+        TextView label = new TextView(this);
         label.setText(labelRes);
         label.setTextSize(12);
         label.setTextColor(ContextCompat.getColor(this, R.color.text_secondary));
@@ -578,7 +750,7 @@ public class BeaconManagerActivity extends AppCompatActivity {
         return getString(R.string.hours_value_float, minutes / 60.0);
     }
 
-    // === 删除 ===
+    // === 删除信标 ===
 
     private void confirmDelete(BeaconEntity b) {
         new MaterialAlertDialogBuilder(this)
@@ -587,7 +759,6 @@ public class BeaconManagerActivity extends AppCompatActivity {
                 .setNegativeButton(R.string.cancel, null)
                 .setPositiveButton(R.string.menu_delete, (d, w) -> {
                     dbHelper.deleteBeacon(b.getId());
-                    // 删掉最后一颗信标后，它的娃还在库里，但首页只显示「名下有信标」的娃，不会留空面板
                     reload();
                     tip(getString(R.string.deleted_toast, b.getName()));
                 })
@@ -612,18 +783,22 @@ public class BeaconManagerActivity extends AppCompatActivity {
 
     // === Adapter ===
 
+    /** 一个娃一个 Adapter，内部维护这一组的信标列表 */
     private class BeaconAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
 
         private final List<BeaconEntity> items = new ArrayList<>();
+        private final ChildEntity child;
+        private final RecyclerView recyclerView;
+
+        BeaconAdapter(ChildEntity child, RecyclerView recyclerView) {
+            this.child = child;
+            this.recyclerView = recyclerView;
+        }
 
         void setData(List<BeaconEntity> data) {
             items.clear();
-            items.addAll(data);
+            if (data != null) items.addAll(data);
             notifyDataSetChanged();
-        }
-
-        List<BeaconEntity> getBeacons() {
-            return items;
         }
 
         /** 真·插入（remove + add），任何跨度都正确 */
@@ -689,8 +864,7 @@ public class BeaconManagerActivity extends AppCompatActivity {
             }
 
             void bind(BeaconEntity b) {
-                // 卡片高亮已经没有「选中」的意思了（首页改按娃显示），统一取消描边，
-                // 靠第二行那行归属文字来区分
+                // 卡片高亮没有「选中」的意思（首页按娃显示），统一取消描边
                 card.setStrokeWidth(dp(2));
                 card.setStrokeColor(ContextCompat.getColor(BeaconManagerActivity.this,
                         R.color.transparent));
@@ -700,8 +874,8 @@ public class BeaconManagerActivity extends AppCompatActivity {
                 txtName.setTextColor(ContextCompat.getColor(BeaconManagerActivity.this,
                         R.color.text_primary));
 
-                String tag = tagOf(b);
-                txtTag.setText(tag);
+                // 第二行只放场景标签：娃名在分组头上已经写过了
+                txtTag.setText(tagOf(b));
                 txtTag.setTextColor(ContextCompat.getColor(BeaconManagerActivity.this,
                         R.color.text_secondary));
 
@@ -710,7 +884,7 @@ public class BeaconManagerActivity extends AppCompatActivity {
 
             /**
              * 按下即滑就拖：
-             * 点按 → 选择；滑动超过 touchSlop → 拖动换位；按住 500ms 不动 → 菜单
+             * 点按 → 信息页；滑动超过 touchSlop → 组内换位；按住 500ms 不动 → 也是信息页
              */
             @SuppressLint("ClickableViewAccessibility")
             private void attachGestures() {
@@ -731,7 +905,6 @@ public class BeaconManagerActivity extends AppCompatActivity {
                                 int pos = getBindingAdapterPosition();
                                 if (pos == RecyclerView.NO_POSITION || pos >= items.size()) return;
                                 longHoldFired = true;
-                                // 长按直接进信息页，没有再套一层菜单
                                 showBeaconInfo(items.get(pos));
                             };
                             handler.postDelayed(pendingHold, HOLD_MS);
@@ -756,7 +929,7 @@ public class BeaconManagerActivity extends AppCompatActivity {
                                 // 拖动期间关掉条目动画：交换要立刻生效，否则卡片被动画拽回去，看着就是不跟手
                                 savedAnimator = recyclerView.getItemAnimator();
                                 recyclerView.setItemAnimator(null);
-                                // 禁止 RecyclerView 把手势抢去当滚动，否则拖到一半就被 CANCEL
+                                // 禁止外层滚动把手势抢走，否则拖到一半就被 CANCEL
                                 if (v.getParent() != null) {
                                     v.getParent().requestDisallowInterceptTouchEvent(true);
                                 }
@@ -822,7 +995,7 @@ public class BeaconManagerActivity extends AppCompatActivity {
                                 if (v.getParent() != null) {
                                     v.getParent().requestDisallowInterceptTouchEvent(false);
                                 }
-                                // 拖动结束 → 落库
+                                // 拖动结束 → 落库（只动这一组，其他组的顺序不受影响）
                                 dbHelper.updateSortOrders(items);
                                 // 等回弹动画走完再把条目动画还回去
                                 handler.postDelayed(() -> {
@@ -860,11 +1033,11 @@ public class BeaconManagerActivity extends AppCompatActivity {
                 float x = rawX - rvLoc[0];
                 float y = rawY - rvLoc[1];
                 for (int i = 0; i < recyclerView.getChildCount(); i++) {
-                    View child = recyclerView.getChildAt(i);
-                    if (child == itemView) continue;
-                    if (x >= child.getLeft() && x < child.getRight()
-                            && y >= child.getTop() && y < child.getBottom()) {
-                        int pos = recyclerView.getChildAdapterPosition(child);
+                    View childView = recyclerView.getChildAt(i);
+                    if (childView == itemView) continue;
+                    if (x >= childView.getLeft() && x < childView.getRight()
+                            && y >= childView.getTop() && y < childView.getBottom()) {
+                        int pos = recyclerView.getChildAdapterPosition(childView);
                         return pos < items.size() ? pos : -1;
                     }
                 }
@@ -882,7 +1055,11 @@ public class BeaconManagerActivity extends AppCompatActivity {
         class AddVH extends RecyclerView.ViewHolder {
             AddVH(@NonNull View itemView) {
                 super(itemView);
-                itemView.setOnClickListener(v -> showAddOptions());
+                // 第二行写清楚加到谁身上：页面上有几个「+」，不写归属会点错。
+                // 名字放小字那行而不是标题那行 —— 娃名可能很长，标题撑不开会被截成「添加到…」
+                TextView hint = itemView.findViewById(R.id.txt_add_hint);
+                hint.setText(getString(R.string.add_to_child, child.displayName()));
+                itemView.setOnClickListener(v -> showAddOptions(child));
             }
         }
     }

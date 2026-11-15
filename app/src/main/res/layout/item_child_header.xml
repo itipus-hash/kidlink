@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  信标管理页的分组头：一个娃一行。
+  · 点一下 = 折叠 / 展开这一组
+  · 长按 = 改名 / 删除这个娃
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="horizontal"
+    android:gravity="center_vertical"
+    android:background="?attr/selectableItemBackground"
+    android:clickable="true"
+    android:focusable="true"
+    android:paddingStart="16dp"
+    android:paddingEnd="16dp"
+    android:paddingTop="14dp"
+    android:paddingBottom="8dp">
+
+    <TextView
+        android:id="@+id/txt_child_name"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:maxLines="1"
+        android:ellipsize="end"
+        android:textSize="16sp"
+        android:textStyle="bold"
+        android:textColor="@color/text_primary" />
+
+    <TextView
+        android:id="@+id/txt_child_count"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="8dp"
+        android:textSize="12sp"
+        android:textColor="@color/text_secondary" />
+
+    <Space
+        android:layout_width="0dp"
+        android:layout_height="1dp"
+        android:layout_weight="1" />
+
+    <TextView
+        android:id="@+id/txt_chevron"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:minWidth="24dp"
+        android:gravity="end"
+        android:textSize="14sp"
+        android:textColor="@color/text_secondary"
+        android:text="@string/chevron_expanded" />
+
+</LinearLayout>

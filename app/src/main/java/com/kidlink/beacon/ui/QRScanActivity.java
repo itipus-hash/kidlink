@@ -224,8 +224,8 @@ public class QRScanActivity extends AppCompatActivity {
 
         long id = dbHelper.insertBeacon(beacon);
         if (id > 0) {
-            // 新信标要立刻挂到某个娃下面，否则首页加载前它是个「没归属」的孤儿
-            dbHelper.ensureChildren();
+            // 归属交给调用方决定：管理页会把它认领到点「+」的那一组，
+            // 首页则走 ensureChildren() 兜底。这里别抢着分配。
             runOnUiThread(() -> {
                 Feedback.show(this, R.string.import_success);
                 setResult(RESULT_OK);

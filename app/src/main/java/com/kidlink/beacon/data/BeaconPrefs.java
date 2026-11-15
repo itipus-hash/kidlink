@@ -477,6 +477,42 @@ public class BeaconPrefs {
                 .apply();
     }
 
+    // === 信标管理页的分组折叠状态 ===
+
+    private static final String KEY_COLLAPSED_CHILDREN = "collapsed_children";
+
+    /** 这个娃的分组是否折叠着（存起来，下次进来还是那个样子） */
+    public static boolean isChildCollapsed(Context ctx, long childId) {
+        return collapsedSet(ctx).contains(childId);
+    }
+
+    public static void setChildCollapsed(Context ctx, long childId, boolean collapsed) {
+        if (childId <= 0) return;
+        java.util.Set<Long> set = collapsedSet(ctx);
+        boolean changed = collapsed ? set.add(childId) : set.remove(childId);
+        if (!changed) return;
+        StringBuilder sb = new StringBuilder();
+        for (Long id : set) {
+            if (sb.length() > 0) sb.append(',');
+            sb.append(id);
+        }
+        sp(ctx).edit().putString(KEY_COLLAPSED_CHILDREN, sb.toString()).apply();
+    }
+
+    private static java.util.Set<Long> collapsedSet(Context ctx) {
+        java.util.Set<Long> set = new java.util.HashSet<>();
+        String raw = sp(ctx).getString(KEY_COLLAPSED_CHILDREN, "");
+        if (raw == null || raw.trim().isEmpty()) return set;
+        for (String part : raw.split(",")) {
+            try {
+                long id = Long.parseLong(part.trim());
+                if (id > 0) set.add(id);
+            } catch (NumberFormatException ignored) {
+            }
+        }
+        return set;
+    }
+
     // === 后台扫描 / 到达提醒 ===
     //
     // 后台运行和扫描是固定开启的，没有开关（前台服务常驻），

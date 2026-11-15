@@ -30,8 +30,9 @@ Eddystone（Google 的另一套格式）和普通蓝牙设备做不到这点：
 
     <!-- Beacon manager -->
     <string name="beacon_manager_title">蓝牙信标</string>
-    <string name="beacon_manager_hint">点击卡片查看信标信息 · 按住拖动可排序\n一个娃可以挂多颗信标（书包一颗、奥数包一颗），首页按娃显示</string>
+    <string name="beacon_manager_hint">按娃分组。点分组头折叠 / 长按改名，点卡片看信息，按住卡片滑动可排序</string>
     <string name="add_beacon_hint">扫描或扫码</string>
+    <string name="add_to_child">归到%s</string>
     <string name="add_by_ble">蓝牙扫描附近信标</string>
     <string name="add_by_qr">扫描二维码导入</string>
     <string name="drag_to_sort">拖动排序</string>
@@ -41,6 +42,17 @@ Eddystone（Google 的另一套格式）和普通蓝牙设备做不到这点：
     <string name="select_limit_reached">最多同时选中 %d 个信标</string>
     <string name="keep_one_selected">至少要保留一个信标选中</string>
     <string name="deleted_toast">已删除「%s」</string>
+
+    <!-- 娃分组 -->
+    <string name="child_beacon_count">%d 颗</string>
+    <string name="child_add">＋ 新建一个娃</string>
+    <string name="child_created">已新建「%s」</string>
+    <string name="child_rename">重命名这个娃</string>
+    <string name="child_delete">删除这个分组</string>
+    <string name="child_deleted">已删除「%s」</string>
+    <string name="child_delete_last">只剩一个娃，删了信标就没人可挂了。\n要改名字请用「重命名」。</string>
+    <string name="child_delete_msg">「%1$s」下面的 %2$d 颗信标不会被删除，\n会全部并到剩下的第一个娃下面。</string>
+    <string name="child_delete_msg_empty">「%s」下面还没有信标，删掉不会影响其他数据。</string>
 
     <!-- Manager long press menu -->
     <string name="menu_rename">自定义名称</string>
