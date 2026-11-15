@@ -395,7 +395,7 @@ public class BeaconManagerActivity extends AppCompatActivity {
         input.setSingleLine(true);
 
         new MaterialAlertDialogBuilder(this)
-                .setTitle(R.string.child_rename)
+                .setTitle(getString(R.string.child_rename_title, child.displayName()))
                 .setView(wrapInPadding(input))
                 .setNegativeButton(R.string.cancel, null)
                 .setPositiveButton(R.string.save, (d, w) -> {
@@ -429,7 +429,7 @@ public class BeaconManagerActivity extends AppCompatActivity {
                 : getString(R.string.child_delete_msg, child.displayName(), owned.size());
 
         new MaterialAlertDialogBuilder(this)
-                .setTitle(R.string.child_delete)
+                .setTitle(getString(R.string.child_delete_title, child.displayName()))
                 .setMessage(msg)
                 .setNegativeButton(R.string.cancel, null)
                 .setPositiveButton(R.string.child_delete, (d, w) -> {

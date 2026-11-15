@@ -49,8 +49,10 @@ Eddystone（Google 的另一套格式）和普通蓝牙设备做不到这点：
     <string name="child_beacon_count">%d 颗</string>
     <string name="child_add">＋ 新建一个娃</string>
     <string name="child_created">已新建「%s」</string>
-    <string name="child_rename">重命名这个娃</string>
-    <string name="child_delete">删除这个分组</string>
+    <string name="child_rename">重命名</string>
+    <string name="child_rename_title">重命名「%s」</string>
+    <string name="child_delete">删除</string>
+    <string name="child_delete_title">删除「%s」？</string>
     <string name="child_deleted">已删除「%s」</string>
     <string name="child_delete_last">只剩一个娃，删了信标就没人可挂了。\n要改名字请用「重命名」。</string>
     <string name="child_delete_msg">「%1$s」下面的 %2$d 颗信标不会被删除，\n会全部并到剩下的第一个娃下面。</string>
