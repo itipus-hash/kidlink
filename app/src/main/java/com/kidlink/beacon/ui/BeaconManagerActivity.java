@@ -81,7 +81,14 @@ public class BeaconManagerActivity extends AppCompatActivity {
      * 放在这里而不是首页：用户「手里没硬件」这件事，是在信标管理页发现的 ——
      * 进来一看是空的，这时候顺手给型号最合适。
      */
-    private static final String SHOP_URL = "https://m.tb.cn/h.jlD0sX1";
+    /**
+     * 淘宝淘口令，不是短链。
+     *
+     * 短链在手机上只会把淘宝网页版打开（还要登录、加购），而淘口令是淘宝 App 认的东西：
+     * 复制之后打开淘宝，它会自己弹「发现一个宝贝」，比粘贴短链稳得多。
+     * 注意这段里有 emoji 和 $，别做 trim 以外的任何处理。
+     */
+    private static final String SHOP_CLIP = "8Fu😊zhi0$HKVg6eLdTeR$:// MU5183,打開/";
 
     private BeaconDbHelper dbHelper;
     /** 所有分组的容器，每次 reload 全量重建 */
@@ -351,18 +358,18 @@ public class BeaconManagerActivity extends AppCompatActivity {
     }
 
     /**
-     * 复制淘宝链接，而不是直接跳浏览器。
+     * 复制淘口令，而不是直接跳浏览器。
      *
      * 手机上「打开链接」十有八九落到浏览器里的淘宝网页版，登录、加购都别扭；
-     * 复制到剪贴板之后用户在淘宝 App 里粘贴，能直接落到商品页（还能拿到淘口令的返利）。
-     * 所以这里只做两件事：写剪贴板 + 提示一句「去淘宝粘贴」。
+     * 复制淘口令之后打开淘宝 App，它会自己识别并弹出去商品页。
+     * 所以这里只做两件事：写剪贴板 + 提示一句「打开淘宝看看」。
      */
     private void copyShopLink() {
         android.content.ClipboardManager cm =
                 (android.content.ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
         if (cm != null) {
             cm.setPrimaryClip(android.content.ClipData.newPlainText(
-                    getString(R.string.buy_beacon_short), SHOP_URL));
+                    getString(R.string.buy_beacon_short), SHOP_CLIP));
         }
         Feedback.show(this, R.string.buy_link_copied, true);
     }

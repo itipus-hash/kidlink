@@ -15,7 +15,7 @@
     <string name="buy_beacon_title">还没有信标？可以先买这个</string>
     <string name="buy_beacon_name">大夏龙雀 iBeacon 基站 · 防水型</string>
     <string name="buy_beacon_action">复制淘宝链接</string>
-    <string name="buy_link_copied">淘宝链接已复制，打开淘宝粘贴就能下单</string>
+    <string name="buy_link_copied">淘口令已复制，打开淘宝就会弹出来</string>
     <string name="buy_beacon_proto">⚠ 只支持 iBeacon 协议 · 点这里看为什么</string>
     <string name="protocol_title">为什么只支持 iBeacon</string>
     <string name="protocol_body">iBeacon 是 Apple 定的广播格式，每包里固定带着三段标识：UUID、Major、Minor。这三段出厂写死、每次广播一模一样，程序才认得出「这是我塞进书包的那一颗」。

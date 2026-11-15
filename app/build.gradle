@@ -10,7 +10,7 @@ android {
         applicationId "com.kidlink.beacon"
         minSdk 31
         targetSdk 34
-        versionCode 83
+        versionCode 84
         versionName "1.5.0"
 
         ndk {
