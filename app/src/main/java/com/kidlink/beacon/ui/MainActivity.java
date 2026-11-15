@@ -28,6 +28,7 @@ import com.kidlink.beacon.ble.IBeaconParser;
 import com.kidlink.beacon.data.BeaconDbHelper;
 import com.kidlink.beacon.data.BeaconEntity;
 import com.kidlink.beacon.data.BeaconPrefs;
+import com.kidlink.beacon.data.ChildEntity;
 import com.kidlink.beacon.data.WifiGate;
 import com.kidlink.beacon.push.PushClient;
 import com.kidlink.beacon.service.BeaconForegroundService;
@@ -38,16 +39,19 @@ import java.util.LinkedList;
 import java.util.List;
 
 /**
- * 首页：显示选中的信标状态与估算距离。
+ * 首页：按**娃**显示，一块面板 = 一个娃。
  *
- * 支持同时选中最多 3 个信标，纵向等分：
- * - 选 1 个 → 一块占满整个区域
- * - 选 2 个 → 上下各一半
- * - 选 3 个 → 三等分，每块整体缩一档（图标 / 字号小一点，保证不溢出）
+ * 为什么不是按信标：信标是绑在包上的。书包一颗、奥数包一颗，两颗信标是同一个娃，
+ * 按信标显示就成了「两块各算各的」，家长看到的不是「我离许小鱼多远」，
+ * 而是两台设备各自的信号，反而更绕。按娃显示之后，一个娃名下挂几颗信标都行，
+ * 谁信号强就拿谁当「当前」，小字标出「当前：奥数包」。
  *
- * 每一块的状态完全独立（各自的 RSSI 滤波、丢失判定、迟滞、冷却）；
- * 推送也是各推各的 —— 分别推「爸爸接到许小鱼」「爸爸接到许大鱼」，
- * 每个信标各自算 2 小时冷却，不会互相吃掉。
+ * 支持同时显示最多 3 个娃，纵向等分：
+ * - 1 个 → 一块占满整个区域
+ * - 2 个 → 上下各一半
+ * - 3 个 → 三等分，每块整体缩一档（图标 / 字号小一点，保证不溢出）
+ *
+ * 推送冷却按娃算（同趟带的两个包只推一条），文案优先级见 buildArriveMessage()。
  */
 public class MainActivity extends AppCompatActivity {
 
@@ -83,8 +87,17 @@ public class MainActivity extends AppCompatActivity {
     private BeaconScanner scanner;
 
     private final Panel[] panels = new Panel[PANEL_COUNT];
-    /** 当前选中的信标（顺序 = 从上到下），最多三个 */
+    /** 当前显示的娃（顺序 = 从上到下），最多三个 */
+    private final List<ChildEntity> currentChildren = new ArrayList<>();
+    /**
+     * 参与扫描的全部信标。
+     *
+     * 首页不再有「选中哪几个」的概念 —— 只要信标有归属的娃，就一起扫。
+     * 一个娃下面几颗信标互为主备，谁在手边谁就用得上。
+     */
     private final List<BeaconEntity> currentBeacons = new ArrayList<>();
+    /** findPanel() 顺带记下这条广播命中的是哪一颗信标（一个娃下面可能有好几颗） */
+    private BeaconEntity matchedBeacon;
     /** 三条水平分隔线，按块数显示前 N-1 条 */
     private View[] dividers;
 
@@ -96,20 +109,31 @@ public class MainActivity extends AppCompatActivity {
     private long scanStartedAt = 0;
     private long lastScanRestartAt = 0;
 
-    /** 一块显示区：圆环 + 名字 + 距离 + 信号 + 状态，各自带独立测量状态 */
+    /** 一块显示区：圆环 + 娃名 + 当前信标 + 距离 + 信号 + 状态，各自带独立测量状态 */
     private static class Panel {
         View container;
         View circleBox;
         View circleBg;
         View icon;
         TextView name;
+        /** 小字：这个娃现在身上是哪颗信标 */
+        TextView sub;
         TextView distance;
         TextView rssi;
         TextView state;
         View rowSignal;
 
-        BeaconEntity beacon;
-        final LinkedList<Integer> rssiBuffer = new LinkedList<>();
+        ChildEntity child;
+        /** 这个娃名下的全部信标 */
+        final List<BeaconEntity> beacons = new ArrayList<>();
+        /** 每颗信标各自一条 RSSI 平滑窗口，互不干扰 */
+        final java.util.Map<Long, LinkedList<Integer>> rssiBuf = new java.util.HashMap<>();
+        final java.util.Map<Long, Integer> rssiSmooth = new java.util.HashMap<>();
+        /** 每颗信标最后一次收到广播的时间，用来把「已经不在场」的那颗排除出比较 */
+        final java.util.Map<Long, Long> lastSeen = new java.util.HashMap<>();
+        /** 上一次刷新时信号最强的那颗，用于「当前：xx」 */
+        BeaconEntity best;
+
         boolean hadSignal = false;
         long lastSignalAt = 0;
         double lastShownDistance = -1;
@@ -117,9 +141,9 @@ public class MainActivity extends AppCompatActivity {
         boolean near = false;
         /** 上一次渲染时是否已在悬浮提醒的触发距离内 */
         boolean frontTipOn = false;
-        /** 这个信标「已经在到达区内」；只有距离超过阈值 + 3 米才清（跨重启保存在 prefs） */
+        /** 这个娃「已经在到达区内」；只有距离超过阈值 + 3 米才清（跨重启保存在 prefs） */
         boolean arrivedFired = false;
-        /** 这个信标「已经在接近区内」；同样只认距离真的走远，信号抖动和冷启动都不清 */
+        /** 这个娃「已经在接近区内」；同样只认距离真的走远，信号抖动和冷启动都不清 */
         boolean approachFired = false;
     }
 
@@ -160,7 +184,7 @@ public class MainActivity extends AppCompatActivity {
                 long limitMs = BeaconPrefs.getDetectIntervalSec(MainActivity.this) * 1000L;
                 long now = System.currentTimeMillis();
                 for (Panel p : panels) {
-                    if (p.beacon == null || !p.hadSignal) continue;
+                    if (p.child == null || !p.hadSignal) continue;
                     if (now - p.lastSignalAt > limitMs) {
                         p.hadSignal = false;
                         renderLost(p);
@@ -210,16 +234,16 @@ public class MainActivity extends AppCompatActivity {
         dividers = new View[]{findViewById(R.id.divider_h), findViewById(R.id.divider_h_2)};
         bindPanel(0,
                 R.id.panel_1, R.id.circle_container, R.id.circle_bg, R.id.img_beacon,
-                R.id.txt_beacon_name, R.id.txt_distance, R.id.row_signal, R.id.txt_rssi,
-                R.id.txt_state);
+                R.id.txt_beacon_name, R.id.txt_sub, R.id.txt_distance,
+                R.id.row_signal, R.id.txt_rssi, R.id.txt_state);
         bindPanel(1,
                 R.id.panel_2, R.id.circle_container_2, R.id.circle_bg_2, R.id.img_beacon_2,
-                R.id.txt_beacon_name_2, R.id.txt_distance_2, R.id.row_signal_2, R.id.txt_rssi_2,
-                R.id.txt_state_2);
+                R.id.txt_beacon_name_2, R.id.txt_sub_2, R.id.txt_distance_2,
+                R.id.row_signal_2, R.id.txt_rssi_2, R.id.txt_state_2);
         bindPanel(2,
                 R.id.panel_3, R.id.circle_container_3, R.id.circle_bg_3, R.id.img_beacon_3,
-                R.id.txt_beacon_name_3, R.id.txt_distance_3, R.id.row_signal_3, R.id.txt_rssi_3,
-                R.id.txt_state_3);
+                R.id.txt_beacon_name_3, R.id.txt_sub_3, R.id.txt_distance_3,
+                R.id.row_signal_3, R.id.txt_rssi_3, R.id.txt_state_3);
 
         scanner = new BeaconScanner(this);        scanner.setListener(new BeaconScanner.OnBeaconScanListener() {
             @Override
@@ -294,13 +318,15 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void bindPanel(int index, int containerId, int circleBoxId, int circleId, int iconId,
-                           int nameId, int distanceId, int signalId, int rssiId, int stateId) {
+                           int nameId, int subId, int distanceId, int signalId, int rssiId,
+                           int stateId) {
         Panel p = new Panel();
         p.container = findViewById(containerId);
         p.circleBox = findViewById(circleBoxId);
         p.circleBg = findViewById(circleId);
         p.icon = findViewById(iconId);
         p.name = findViewById(nameId);
+        p.sub = findViewById(subId);
         p.distance = findViewById(distanceId);
         p.rowSignal = findViewById(signalId);
         p.rssi = findViewById(rssiId);
@@ -397,11 +423,11 @@ public class MainActivity extends AppCompatActivity {
      */
     private void rearmForNewSession() {
         for (Panel p : panels) {
-            if (p.beacon == null) continue;
+            if (p.child == null) continue;
             p.approachFired = false;
             p.arrivedFired = false;
-            BeaconPrefs.setApproachInside(this, p.beacon.getId(), false);
-            BeaconPrefs.setArrivalInside(this, p.beacon.getId(), false);
+            BeaconPrefs.setApproachInsideByChild(this, p.child.getId(), false);
+            BeaconPrefs.setArrivalInsideByChild(this, p.child.getId(), false);
         }
     }
 
@@ -412,28 +438,28 @@ public class MainActivity extends AppCompatActivity {
         // 不停扫描：后台靠前台服务保活
     }
 
-    // === 选中的信标 ===
+    // === 按娃加载面板 ===
 
     private void loadCurrentBeacons() {
-        // 只有一个信标时自动选中（第一次添加完即生效）
-        BeaconPrefs.ensureAutoSelect(this, dbHelper);
+        // 每颗信标都必须有归属的娃；没有娃（从老版本升上来）就用第一个信标名建一个
+        List<ChildEntity> allChildren = dbHelper.ensureChildren();
 
-        List<Long> ids = BeaconPrefs.getSelectedIds(this);
-        List<BeaconEntity> fresh = new ArrayList<>();
-        for (Long id : ids) {
-            if (fresh.size() >= BeaconPrefs.MAX_SELECTED) break;
-            BeaconEntity b = dbHelper.getBeaconById(id);
-            if (b != null) fresh.add(b);
-        }
-        // 信标被删掉了 → 把失效 id 清掉，别让它一直占着位置
-        if (fresh.size() != ids.size()) {
-            List<Long> valid = new ArrayList<>();
-            for (BeaconEntity b : fresh) valid.add(b.getId());
-            BeaconPrefs.setSelectedIds(this, valid);
+        // 只显示「名下有信标」的娃，一个娃挂几颗信标都行
+        List<ChildEntity> shownChildren = new ArrayList<>();
+        List<List<BeaconEntity>> shownBeacons = new ArrayList<>();
+        List<BeaconEntity> scanList = new ArrayList<>();
+        for (ChildEntity c : allChildren) {
+            List<BeaconEntity> bs = dbHelper.getBeaconsByChild(c.getId());
+            if (bs.isEmpty()) continue;
+            scanList.addAll(bs);
+            // 超过三块就不显示了，但扫描照扫 —— 信标多一颗不多
+            if (shownChildren.size() >= PANEL_COUNT) continue;
+            shownChildren.add(c);
+            shownBeacons.add(bs);
         }
 
-        // 有几个信标就显示几块，分隔线只出现在相邻两块之间
-        int count = fresh.size();
+        // 有几个娃就显示几块，分隔线只出现在相邻两块之间
+        int count = shownChildren.size();
         for (int i = 1; i < PANEL_COUNT; i++) {
             panels[i].container.setVisibility(count > i ? View.VISIBLE : View.GONE);
         }
@@ -442,63 +468,96 @@ public class MainActivity extends AppCompatActivity {
         }
         applyPanelLayout(count);
 
-        // 选择没变（只是从设置页 / 信标管理页 / 后台回来）→ **保留上次画面**，
-        // 不能一回来就把图标刷灰、距离清空。只有真的换了信标才重置。
-        if (sameSelection(currentBeacons, fresh)) {
+        // 分组没变（只是从设置页 / 信标管理页 / 后台回来）→ **保留上次画面**，
+        // 不能一回来就把图标刷灰、距离清空。只有真的换了娃或换了归属才重置。
+        if (samePanels(shownChildren, shownBeacons)) {
+            currentBeacons.clear();
+            currentBeacons.addAll(scanList);
             for (int i = 0; i < panels.length; i++) {
                 Panel p = panels[i];
-                p.beacon = i < fresh.size() ? fresh.get(i) : null;
-                if (p.beacon == null) continue;
-                // 管理页可能改过名字
-                if (p.hadSignal) p.name.setText(p.beacon.getName());
+                if (i >= shownChildren.size()) {
+                    p.child = null;
+                    p.beacons.clear();
+                    continue;
+                }
+                p.child = shownChildren.get(i);
+                syncBeacons(p, shownBeacons.get(i));
+                // 管理页可能改过娃名 / 信标名 / 场景标签
+                if (p.hadSignal) {
+                    p.name.setText(p.child.displayName());
+                    renderSub(p);
+                }
                 // 「已在区内」的真实状态在 prefs 里（信标信息页的「清除冷却」会把它清掉），
                 // 内存这份只是镜像 —— 不同步的话，清完冷却回到首页还是不会推，
                 // 非得把 APP 杀了重开（那时走的是下面那个分支）才生效。
-                p.approachFired = BeaconPrefs.isApproachInside(this, p.beacon.getId());
-                p.arrivedFired = BeaconPrefs.isArrivalInside(this, p.beacon.getId());
+                p.approachFired = BeaconPrefs.isApproachInsideByChild(this, p.child.getId());
+                p.arrivedFired = BeaconPrefs.isArrivalInsideByChild(this, p.child.getId());
             }
-            if (fresh.isEmpty()) {
-                currentBeacons.clear();
+            if (shownChildren.isEmpty()) {
+                currentChildren.clear();
                 renderNoBeacon(panels[0]);
             }
             return;
         }
 
+        currentChildren.clear();
+        currentChildren.addAll(shownChildren);
         currentBeacons.clear();
-        currentBeacons.addAll(fresh);
+        currentBeacons.addAll(scanList);
 
         for (int i = 0; i < panels.length; i++) {
             Panel p = panels[i];
-            p.beacon = i < currentBeacons.size() ? currentBeacons.get(i) : null;
-            p.rssiBuffer.clear();
+            p.child = i < shownChildren.size() ? shownChildren.get(i) : null;
+            syncBeacons(p, i < shownBeacons.size() ? shownBeacons.get(i) : null);
+            p.rssiBuf.clear();
+            p.rssiSmooth.clear();
+            p.lastSeen.clear();
+            p.best = null;
             p.hadSignal = false;
             p.lastSignalAt = 0;
             p.lastShownDistance = -1;
             // 「已经在区内」是持久状态：APP 接完人会自己退出，这里必须从 prefs 恢复，
             // 否则重新打开时人还站在信标旁边，又推一条「已靠近」
-            p.arrivedFired = p.beacon != null
-                    && BeaconPrefs.isArrivalInside(this, p.beacon.getId());
-            p.approachFired = p.beacon != null
-                    && BeaconPrefs.isApproachInside(this, p.beacon.getId());
+            p.arrivedFired = p.child != null
+                    && BeaconPrefs.isArrivalInsideByChild(this, p.child.getId());
+            p.approachFired = p.child != null
+                    && BeaconPrefs.isApproachInsideByChild(this, p.child.getId());
             p.near = false;
             p.frontTipOn = false;
             resetPanelView(p);
         }
 
-        if (currentBeacons.isEmpty()) {
+        if (currentChildren.isEmpty()) {
             renderNoBeacon(panels[0]);
         } else {
             for (Panel p : panels) {
-                if (p.beacon != null) renderSearching(p);
+                if (p.child != null) renderSearching(p);
             }
         }
     }
 
-    /** 两次选择是不是同一批信标（顺序也算） */
-    private boolean sameSelection(List<BeaconEntity> old, List<BeaconEntity> fresh) {
-        if (old.size() != fresh.size()) return false;
-        for (int i = 0; i < old.size(); i++) {
-            if (old.get(i).getId() != fresh.get(i).getId()) return false;
+    /** 把新的信标列表同步进 panel（只换内容，不换 panel 对象） */
+    private void syncBeacons(Panel p, List<BeaconEntity> fresh) {
+        p.beacons.clear();
+        if (fresh != null) p.beacons.addAll(fresh);
+    }
+
+    /**
+     * 面板归属有没有变：娃的先后顺序 + 每个娃名下信标的 id。
+     *
+     * 比的是内存里那份（panels[i].beacons），不是 currentBeacons ——
+     * currentBeacons 装的是全部扫描目标，可能比显示的娃名下的信标多。
+     */
+    private boolean samePanels(List<ChildEntity> children, List<List<BeaconEntity>> beacons) {
+        if (currentChildren.size() != children.size()) return false;
+        for (int i = 0; i < children.size(); i++) {
+            if (currentChildren.get(i).getId() != children.get(i).getId()) return false;
+            List<BeaconEntity> oldBs = panels[i].beacons;
+            List<BeaconEntity> newBs = beacons.get(i);
+            if (oldBs.size() != newBs.size()) return false;
+            for (int j = 0; j < oldBs.size(); j++) {
+                if (oldBs.get(j).getId() != newBs.get(j).getId()) return false;
+            }
         }
         return true;
     }
@@ -521,10 +580,12 @@ public class MainActivity extends AppCompatActivity {
         float nameSp = triple ? 15f : 19f;
         float distSp = triple ? 22f : 30f;
         int nameH = dp(triple ? 22 : 28);
+        int subH = dp(triple ? 14 : 18);
         int distH = dp(triple ? 32 : 42);
         int signalH = dp(triple ? 16 : 20);
         int stateH = dp(triple ? 28 : 36);
         float stateSp = triple ? 12f : 13f;
+        float subSp = triple ? 10f : 12f;
 
         for (Panel p : panels) {
             p.container.setPaddingRelative(side, 0, side, bottom);
@@ -539,6 +600,9 @@ public class MainActivity extends AppCompatActivity {
             }
             p.name.setLayoutParams(lpName);
             p.name.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, nameSp);
+
+            setHeight(p.sub, subH);
+            p.sub.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, subSp);
 
             android.view.ViewGroup.LayoutParams lpDist = p.distance.getLayoutParams();
             lpDist.height = distH;
@@ -586,10 +650,12 @@ public class MainActivity extends AppCompatActivity {
         scanner.stopScan();
         scanner.resetRssiFilter();
         for (Panel p : panels) {
-            p.rssiBuffer.clear();
-            if (p.beacon != null && !p.hadSignal) renderSearching(p);
+            p.rssiBuf.clear();
+            p.rssiSmooth.clear();
+            p.lastSeen.clear();
+            if (p.child != null && !p.hadSignal) renderSearching(p);
         }
-        // 首页同时盯两个信标：用软件层的多目标过滤，硬件过滤一律不设
+        // 首页同时盯好几个信标：用软件层的多目标过滤，硬件过滤一律不设
         scanner.clearFilter();
         scanner.setTargets(currentBeacons);
         if (scanner.startScan()) {
@@ -615,7 +681,7 @@ public class MainActivity extends AppCompatActivity {
     private long lastAnySignalAt() {
         long latest = 0;
         for (Panel p : panels) {
-            if (p.beacon != null && p.lastSignalAt > latest) latest = p.lastSignalAt;
+            if (p.child != null && p.lastSignalAt > latest) latest = p.lastSignalAt;
         }
         return latest;
     }
@@ -629,24 +695,26 @@ public class MainActivity extends AppCompatActivity {
     private void handleBeaconSignal(IBeaconData data, ScanResult scanResult) {
         final String mac = macOf(scanResult);
         final Panel p = findPanel(data, mac);
-        if (p == null || p.beacon == null) return;
+        if (p == null || matchedBeacon == null) return;
+        final BeaconEntity hit = matchedBeacon;
+        final int rssi = data.rssi;
 
         // 旧数据里没有 MAC：第一次收到广播就顺手补上。
         // 补完之后这个信标只认自己的 MAC，同品牌三件套一样的另一台就不会串进来。
-        if (!p.beacon.hasMac() && !mac.isEmpty()) {
-            p.beacon.setMac(mac);
-            dbHelper.updateMac(p.beacon.getId(), mac);
+        if (!hit.hasMac() && !mac.isEmpty()) {
+            hit.setMac(mac);
+            dbHelper.updateMac(hit.getId(), mac);
         }
 
-        int filtered = smoothRssi(p, data.rssi);
-        double distance = p.beacon.estimateDistance(filtered);
-        if (distance <= 0) return;
-
+        // 平滑窗口、在场时间、渲染全部挪到主线程做：
+        // 广播回调是另一条线程，几个 Map 同时读写会互相踩。
         handler.post(() -> {
-            if (p.beacon == null) return;
+            if (p.child == null) return;
+            smoothRssi(p, hit.getId(), rssi);
+            p.lastSeen.put(hit.getId(), System.currentTimeMillis());
             p.hadSignal = true;
             p.lastSignalAt = System.currentTimeMillis();
-            renderSignal(p, distance, filtered);
+            renderSignal(p);
         });
     }
 
@@ -662,32 +730,74 @@ public class MainActivity extends AppCompatActivity {
     }
 
     /**
-     * 这条广播属于上/下哪一块。
+     * 这条广播属于哪一块（哪个娃）。
      *
-     * 匹配顺序：有 MAC 的信标先比 MAC，再比 UUID+Major+Minor。
+     * 一个娃名下可能挂了好几颗信标（书包一颗、奥数包一颗），所以是扫一遍每个娃的
+     * 信标列表。匹配顺序：有 MAC 的先比 MAC，再比 UUID+Major+Minor。
      * 只比三件套是不够的 —— 同品牌的两台信标出厂可能 UUID 一模一样，
-     * 光看三件套会把两台设备都算到同一个面板上（A 在楼下 B 在学校，屏幕上两个名字一起跳）。
+     * 光看三件套会把两台设备都算成同一颗。
+     *
+     * 命中的那颗顺手记在 {@link #matchedBeacon} 里，调用方要知道是哪一颗
+     * （补 MAC、算这颗自己的平滑值）。
      */
     private Panel findPanel(IBeaconData data, String mac) {
+        matchedBeacon = null;
         String m = mac == null ? "" : mac.trim().toUpperCase();
         for (Panel p : panels) {
-            if (p.beacon == null) continue;
-            if (p.beacon.hasMac() && !p.beacon.getMac().equals(m)) continue;
-            if (p.beacon.getMajor() != data.major) continue;
-            if (p.beacon.getMinor() != data.minor) continue;
-            if (IBeaconParser.uuidMatch(data.uuid, p.beacon.getUuidFormatted())) return p;
+            if (p.child == null) continue;
+            for (BeaconEntity b : p.beacons) {
+                if (b.hasMac() && !b.getMac().equals(m)) continue;
+                if (b.getMajor() != data.major) continue;
+                if (b.getMinor() != data.minor) continue;
+                if (IBeaconParser.uuidMatch(data.uuid, b.getUuidFormatted())) {
+                    matchedBeacon = b;
+                    return p;
+                }
+            }
         }
         return null;
     }
 
-    private int smoothRssi(Panel p, int rssi) {
-        synchronized (p.rssiBuffer) {
-            p.rssiBuffer.addLast(rssi);
-            while (p.rssiBuffer.size() > RSSI_WINDOW) p.rssiBuffer.removeFirst();
-            int sum = 0;
-            for (int r : p.rssiBuffer) sum += r;
-            return sum / p.rssiBuffer.size();
+    /** 每颗信标各有一条自己的平滑窗口，几个包同时在场也不会互相拉低 */
+    private void smoothRssi(Panel p, long beaconId, int rssi) {
+        LinkedList<Integer> buf = p.rssiBuf.get(beaconId);
+        if (buf == null) {
+            buf = new LinkedList<>();
+            p.rssiBuf.put(beaconId, buf);
         }
+        buf.addLast(rssi);
+        while (buf.size() > RSSI_WINDOW) buf.removeFirst();
+        int sum = 0;
+        for (int r : buf) sum += r;
+        p.rssiSmooth.put(beaconId, sum / buf.size());
+    }
+
+    /**
+     * 这个娃现在身上是哪颗信标 —— 取平滑后信号最强、且**还在场**的那颗。
+     *
+     * 两个关键点：
+     * 1. 用平滑值而不是单包 RSSI，否则书包在楼下、奥数包在楼上时，
+     *    「当前」会在一两个包之间来回跳。
+     * 2. 超过检测间隔没再收到广播的那颗直接排除 —— 只留下最后一次的强值的话，
+     *    奥数包放进柜子一下午，首页会一直指着它说「当前：奥数包」，
+     *    而人其实早就只带着书包了。
+     */
+    private BeaconEntity pickBestBeacon(Panel p) {
+        long limitMs = BeaconPrefs.getDetectIntervalSec(this) * 1000L;
+        long now = System.currentTimeMillis();
+        BeaconEntity best = null;
+        int bestRssi = Integer.MIN_VALUE;
+        for (BeaconEntity b : p.beacons) {
+            Integer r = p.rssiSmooth.get(b.getId());
+            Long seen = p.lastSeen.get(b.getId());
+            if (r == null || seen == null) continue;
+            if (now - seen > limitMs) continue;
+            if (r > bestRssi) {
+                bestRssi = r;
+                best = b;
+            }
+        }
+        return best;
     }
 
     // === 渲染 ===
@@ -696,10 +806,11 @@ public class MainActivity extends AppCompatActivity {
     // 这里只切换 INVISIBLE/VISIBLE，不改变占用空间，
     // 所以任何状态下图标和名字的纵向位置都不会动。
 
-    /** 清空这一块的残留内容（切换选择时用） */
+    /** 清空这一块的残留内容（切换分组时用） */
     private void resetPanelView(Panel p) {
         p.circleBg.setBackgroundResource(R.drawable.bg_circle_gray);
         p.name.setText("");
+        if (p.sub != null) p.sub.setText("");
         p.distance.setText("");
         p.distance.setVisibility(View.INVISIBLE);
         p.rowSignal.setVisibility(View.INVISIBLE);
@@ -707,16 +818,17 @@ public class MainActivity extends AppCompatActivity {
         p.state.setText("");
     }
 
-    /** 一个信标都没选 */
+    /** 一个娃都没接（库里没有信标） */
     private void renderNoBeacon(Panel p) {
         resetPanelView(p);
         setStateText(p, getString(R.string.no_beacon_selected), R.color.text_secondary);
     }
 
-    /** 已选信标但还没收到过信号：图标灰着就够了，不写任何文案 */
+    /** 已经有娃但还没收到过信号：图标灰着就够了，不写任何文案 */
     private void renderSearching(Panel p) {
         p.circleBg.setBackgroundResource(R.drawable.bg_circle_gray);
-        p.name.setText(p.beacon != null ? p.beacon.getName() : "");
+        p.name.setText(p.child != null ? p.child.displayName() : "");
+        if (p.sub != null) p.sub.setText("");
         p.distance.setText("");
         p.distance.setVisibility(View.INVISIBLE);
         p.rowSignal.setVisibility(View.INVISIBLE);
@@ -727,7 +839,8 @@ public class MainActivity extends AppCompatActivity {
     /** 超过检测间隔还没收到广播：只把图标变灰，不写"未检测到信号" */
     private void renderLost(Panel p) {
         p.circleBg.setBackgroundResource(R.drawable.bg_circle_gray);
-        p.name.setText(p.beacon != null ? p.beacon.getName() : "");
+        p.name.setText(p.child != null ? p.child.displayName() : "");
+        if (p.sub != null) p.sub.setText("");
         p.distance.setText("");
         p.distance.setVisibility(View.INVISIBLE);
         p.rowSignal.setVisibility(View.INVISIBLE);
@@ -737,8 +850,38 @@ public class MainActivity extends AppCompatActivity {
         p.state.setText("");
     }
 
-    private void renderSignal(Panel p, double distance, int rssi) {
-        p.name.setText(p.beacon.getName());
+    /**
+     * 小字：这个娃现在身上是哪颗信标。
+     * 一个娃只挂一颗信标时没必要写 —— 屏幕上多一行字，却没多出任何信息。
+     */
+    private void renderSub(Panel p) {
+        if (p.sub == null) return;
+        if (p.beacons.size() <= 1 || p.best == null) {
+            p.sub.setText("");
+            return;
+        }
+        p.sub.setText(getString(R.string.main_current_beacon, p.best.getName()));
+    }
+
+    /**
+     * 按「本块里信号最强的那颗信标」重画。
+     *
+     * 距离、图标颜色、悬浮提醒、两条推送全都跟着这颗走 —— 一个娃名下挂几个包，
+     * 家长关心的始终是「离娃最近的那颗有多远」，而不是某一颗特定的信标。
+     */
+    private void renderSignal(Panel p) {
+        if (p.child == null) return;
+        BeaconEntity best = pickBestBeacon(p);
+        if (best == null) return;
+        Integer smooth = p.rssiSmooth.get(best.getId());
+        if (smooth == null) return;
+        final int rssi = smooth;
+        final double distance = best.estimateDistance(rssi);
+        if (distance <= 0) return;
+        p.best = best;
+
+        p.name.setText(p.child.displayName());
+        renderSub(p);
         p.distance.setVisibility(View.VISIBLE);
         p.rowSignal.setVisibility(View.VISIBLE);
         p.rssi.setText(getString(R.string.rssi_value, rssi));
@@ -791,9 +934,9 @@ public class MainActivity extends AppCompatActivity {
      * WiFi 屏蔽时连震动一起停 —— 这条名单的定义是「不提醒」，不只是「不推送」。
      */
     private void onEnterNearZone(Panel p, double distance) {
-        if (p.beacon == null) return;
+        if (p.child == null) return;
         if (WifiGate.blocked(this)) return;
-        if (inArrivalCooldown(p.beacon.getId())) return;
+        if (inArrivalCooldown(p.child.getId())) return;
         vibrateNear();
     }
 
@@ -812,8 +955,8 @@ public class MainActivity extends AppCompatActivity {
             if (!p.frontTipOn) {
                 p.frontTipOn = true;
                 // WiFi 屏蔽时不冒泡，但标记照常落下：这次进来算过了，换网络也不补一条
-                if (isForeground && !WifiGate.blocked(this)) {
-                    showLightTip(p.beacon.getName(), meters);
+                if (isForeground && !WifiGate.blocked(this) && p.child != null) {
+                    showLightTip(p.child.displayName(), meters);
                 }
             }
         } else if (distance > meters + 2) {
@@ -834,10 +977,10 @@ public class MainActivity extends AppCompatActivity {
         Feedback.show(this, frontTipText(beaconName, meters));
     }
 
-    /** 这个信标是否还在到达冷却期内 */
-    private boolean inArrivalCooldown(long beaconId) {
+    /** 这个娃是否还在到达冷却期内（冷却按娃算：同趟带的两个包只推一条） */
+    private boolean inArrivalCooldown(long childId) {
         long cooldownMs = BeaconPrefs.getPushCooldownMin(this) * 60_000L;
-        return System.currentTimeMillis() - BeaconPrefs.getLastPushAt(this, beaconId) < cooldownMs;
+        return System.currentTimeMillis() - BeaconPrefs.getLastPushAtByChild(this, childId) < cooldownMs;
     }
 
     private Vibrator vibrator() {
@@ -965,10 +1108,10 @@ public class MainActivity extends AppCompatActivity {
      * 接送成功阈值，于是 lastPushAt 永远停在好几小时前 → 冷却形同虚设。
      */
     private void maybePushApproach(Panel p, double distance) {
-        if (p.beacon == null) return;
+        if (p.child == null) return;
 
         final int approachMeters = BeaconPrefs.getApproachMeters(this);
-        final long beaconId = p.beacon.getId();
+        final long childId = p.child.getId();
 
         if (approachMeters <= 0) {
             p.approachFired = false;
@@ -979,7 +1122,7 @@ public class MainActivity extends AppCompatActivity {
         if (p.approachFired) {
             if (distance > approachMeters + REARM_EXTRA_METERS) {
                 p.approachFired = false;
-                BeaconPrefs.setApproachInside(this, beaconId, false);
+                BeaconPrefs.setApproachInsideByChild(this, childId, false);
             }
             return;
         }
@@ -989,13 +1132,13 @@ public class MainActivity extends AppCompatActivity {
         // 否则回家一开 APP 就是「已靠近3米」+「接到了」两条连响
         if (distance <= BeaconPrefs.getPushMeters(this) + 2) {
             p.approachFired = true;
-            BeaconPrefs.setApproachInside(this, beaconId, true);
+            BeaconPrefs.setApproachInsideByChild(this, childId, true);
             return;
         }
 
         // 进区：先把状态落下来，后面无论推没推成，这次进入都不会再重复触发
         p.approachFired = true;
-        BeaconPrefs.setApproachInside(this, beaconId, true);
+        BeaconPrefs.setApproachInsideByChild(this, childId, true);
 
         // 指定 WiFi 不提醒（家里 / 公司这类已知不用提醒的地方）。
         // 状态照常落下 —— 这次进入就不再补推了，只是不发请求出去。
@@ -1003,41 +1146,41 @@ public class MainActivity extends AppCompatActivity {
 
         final java.util.List<String> tokens = BeaconPrefs.getEnabledTokenValues(this);
         if (tokens.isEmpty()) return;
-        if (inApproachCooldown(beaconId) || inApproachGap()) return;
+        if (inApproachCooldown(childId) || inApproachGap()) return;
 
         // 时间段：今天一整天没勾任何分组 → 这天不推（和接送成功推送保持一致）
         final java.util.Date now = new java.util.Date();
         if (!todayHasAnyGroup(now)) return;
 
         String picker = BeaconPrefs.getPickerName(this);
-        String beaconName = p.beacon.getName();
+        String childName = p.child.displayName();
         String meters = String.format(java.util.Locale.getDefault(), "%.0f", distance);
-        final String msg = getString(R.string.approach_push_message, picker, beaconName, meters);
+        final String msg = getString(R.string.approach_push_message, picker, childName, meters);
 
         new PushClient().sendAll(tokens, msg, msg, (ok, m) -> {
             if (ok) {
                 long at = System.currentTimeMillis();
-                BeaconPrefs.setLastApproachAt(MainActivity.this, beaconId, at);
+                BeaconPrefs.setLastApproachAtByChild(MainActivity.this, childId, at);
                 BeaconPrefs.setLastAnyPushAt(MainActivity.this, at);
                 showPushedTip();
             } else {
                 // 推失败不写冷却、也退回「不在区内」，下一包还能重试
                 p.approachFired = false;
-                BeaconPrefs.setApproachInside(MainActivity.this, beaconId, false);
+                BeaconPrefs.setApproachInsideByChild(MainActivity.this, childId, false);
                 Feedback.show(MainActivity.this, getString(R.string.push_failed, m));
             }
         });
     }
 
     /**
-     * 近距离推送的冷却：自己上次「已靠近」+ 这个信标上次「接到人」，
+     * 近距离推送的冷却：这个娃上次「已靠近」+ 上次「接到人」，
      * 两个时间戳取更近的那个 —— 接过人之后短期内就不用再喊「正在靠近」了。
      */
-    private boolean inApproachCooldown(long beaconId) {
+    private boolean inApproachCooldown(long childId) {
         long cooldownMs = BeaconPrefs.getPushCooldownMin(this) * 60_000L;
         long now = System.currentTimeMillis();
-        if (now - BeaconPrefs.getLastPushAt(this, beaconId) < cooldownMs) return true;
-        return now - BeaconPrefs.getLastApproachAt(this, beaconId) < cooldownMs;
+        if (now - BeaconPrefs.getLastPushAtByChild(this, childId) < cooldownMs) return true;
+        return now - BeaconPrefs.getLastApproachAtByChild(this, childId) < cooldownMs;
     }
 
     /** 90 秒全局最小间隔（不分信标、不分类型），只用在近距离推送上 */
@@ -1052,17 +1195,25 @@ public class MainActivity extends AppCompatActivity {
      * 两个信标各推各的：爸爸接到许小鱼 / 爸爸接到许大鱼。
      * 有没有通道可推，只看 token 列表里有没有开着的。
      */
+    /**
+     * 接送成功推送：进入「接送成功推送」距离内推一条「奶奶接到许小鱼了（放学）！」。
+     * 这个娃冷却时间内最多一次，推成功才写冷却。
+     *
+     * 冷却是按娃算的：一趟带书包 + 奥数包出门，两个包先后进区也只推一条，
+     * 不会出现「接到许小鱼」连响两次。
+     */
     private void maybePushArrival(Panel p, double distance) {
-        if (p.beacon == null) return;
+        if (p.child == null) return;
 
         final double pushMeters = BeaconPrefs.getPushMeters(this);
-        final long beaconId = p.beacon.getId();
+        final long childId = p.child.getId();
+        final BeaconEntity beacon = p.best;
 
         // 同样按「进入事件」处理：进过 2 米就一直算在区内，直到真的走出 5 米外
         if (p.arrivedFired) {
             if (distance > pushMeters + REARM_EXTRA_METERS) {
                 p.arrivedFired = false;
-                BeaconPrefs.setArrivalInside(this, beaconId, false);
+                BeaconPrefs.setArrivalInsideByChild(this, childId, false);
             }
             return;
         }
@@ -1070,7 +1221,7 @@ public class MainActivity extends AppCompatActivity {
 
         // 进区：先落状态，冷却中 / 今天不推也不会在之后再补一条
         p.arrivedFired = true;
-        BeaconPrefs.setArrivalInside(this, beaconId, true);
+        BeaconPrefs.setArrivalInsideByChild(this, childId, true);
 
         // 指定 WiFi 不提醒：这里同样先落状态再判断，
         // 免得「在家被屏蔽」这件事在换了网络之后又补推一条迟到的「接到」
@@ -1078,21 +1229,20 @@ public class MainActivity extends AppCompatActivity {
 
         final java.util.List<String> tokens = BeaconPrefs.getEnabledTokenValues(this);
         if (tokens.isEmpty()) return;
-        if (inArrivalCooldown(beaconId)) return;
+        if (inArrivalCooldown(childId)) return;
 
         String picker = BeaconPrefs.getPickerName(this);
-        String beaconName = p.beacon.getName();
         java.util.Date now = new java.util.Date();
 
         // 时间段类型里今天一天都没勾 → 今天整天不推接送通知（周末不接娃就是这种情况）
         if (!todayHasAnyGroup(now)) return;
 
-        final String msg = buildArriveMessage(picker, beaconName, now);
+        final String msg = buildArriveMessage(picker, p.child, beacon, now);
 
         new PushClient().sendAll(tokens, msg, msg, (ok, m) -> {
             if (ok) {
                 long at = System.currentTimeMillis();
-                BeaconPrefs.setLastPushAt(MainActivity.this, beaconId, at);
+                BeaconPrefs.setLastPushAtByChild(MainActivity.this, childId, at);
                 BeaconPrefs.setLastAnyPushAt(MainActivity.this, at);
                 showPushedTip();
                 // 提示条走完再退（设置里可以关掉）
@@ -1100,7 +1250,7 @@ public class MainActivity extends AppCompatActivity {
             } else {
                 // 推失败不写冷却，也退回「不在区内」，走出 5 米再回来还能重试
                 p.arrivedFired = false;
-                BeaconPrefs.setArrivalInside(MainActivity.this, beaconId, false);
+                BeaconPrefs.setArrivalInsideByChild(MainActivity.this, childId, false);
                 Feedback.show(MainActivity.this, getString(R.string.push_failed, m));
             }
         });
@@ -1121,24 +1271,37 @@ public class MainActivity extends AppCompatActivity {
     }
 
     /**
-     * 接送成功的文案：命中某个时间段类型就把它的名字当标签挂在括号里。
-     * 命中「上学」→ 「爸爸接到许小鱼了（上学）」
-     * 命中「放学」→ 「爸爸接到许小鱼了（放学）」
-     * 命中自己加的「兴趣班」→ 「爸爸接到许小鱼了（兴趣班）」
-     * 一个都不命中 → 退回通用文案「爸爸接到许小鱼了」
+     * 接送成功的文案，三层，从上往下第一个命中的赢：
      *
-     * 不再带具体时间：推送本身就是「此刻」发生的，手机通知栏有收到时间，
+     * 1. **信标自己定义了场景** → 「爸爸接到许小鱼了（奥数）」
+     *    奥数包上挂了独立信标，它进区本身就说明了「现在接的是奥数课」，比时间段更准，
+     *    所以优先级最高。标签在信标信息里填，留空表示不限场景。
+     * 2. **时间段命中** → 「爸爸接到许小鱼了（放学）」
+     *    命中设置里某个分组的时间窗口就用那个分组名，改名字文案自动跟着变。
+     * 3. **都没命中** → 「爸爸接到许小鱼了」
+     *
+     * 娃名取信标归属的那个娃，不是信标名 —— 家长要看到的是「接到了谁」，
+     * 不是「哪颗设备被扫到了」。只有一颗信标、又没设归属的极端情况才退回信标名。
+     *
+     * 不带具体时间：推送本身就是「此刻」发生的，通知栏有收到时间，
      * 文案里再写一遍 22:24 只会让句子变长、还容易被误读成「记录」而不是「通知」。
      *
-     * 分组名直接取设置里用户填的名字，改名后推送自动跟着变。
-     * 时间段**精准匹配**：只在窗口内的那一分钟算命中，窗口结束就不再算。
-     * 晚接几分钟就会掉回通用文案「爸爸接到许小鱼了」—— 这是有意的，
-     * 宁可少挂一个标签，也不要让 12:20 接到的娃被标成「放学」。
-     * 想覆盖晚接，把那个分组的时间段拉长就行（比如放学 17:00-18:30）。
+     * 时间段是**精准匹配**：只在窗口内的那一分钟算命中，窗口结束就不再算。
+     * 晚接几分钟就会掉回第 3 层 —— 这是有意的，宁可少挂一个标签，
+     * 也不要让 12:20 接到的娃被标成「放学」。想覆盖晚接就把那个分组的时间段拉长。
      * 分组还带星期维度：不在它勾选的星期里就跳过。
      * 多个分组同时命中时按设置里的先后顺序取第一个（正常配置不该重叠）。
      */
-    private String buildArriveMessage(String picker, String beaconName, java.util.Date now) {
+    private String buildArriveMessage(String picker, ChildEntity child, BeaconEntity beacon,
+                                      java.util.Date now) {
+        String childName = child != null && !child.getName().isEmpty()
+                ? child.displayName()
+                : (beacon != null ? beacon.getName() : "");
+
+        if (beacon != null && beacon.hasLabel()) {
+            return getString(R.string.arrive_typed_message, picker, childName, beacon.getLabel());
+        }
+
         java.util.Calendar cal = java.util.Calendar.getInstance();
         cal.setTime(now);
         int minuteOfDay = cal.get(java.util.Calendar.HOUR_OF_DAY) * 60
@@ -1150,11 +1313,11 @@ public class MainActivity extends AppCompatActivity {
             if (g == null) continue;
             if (!g.matchesDay(isoDay)) continue;
             if (com.kidlink.beacon.data.TimeRanges.contains(g.ranges, minuteOfDay)) {
-                return getString(R.string.arrive_typed_message, picker, beaconName,
+                return getString(R.string.arrive_typed_message, picker, childName,
                         g.displayName());
             }
         }
-        return getString(R.string.arrive_push_message, picker, beaconName);
+        return getString(R.string.arrive_push_message, picker, childName);
     }
 
     /** 距离显示分档，用于判断要不要重绘 */

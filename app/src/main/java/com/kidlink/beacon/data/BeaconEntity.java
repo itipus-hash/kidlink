@@ -17,6 +17,10 @@ public class BeaconEntity {
 
     private int sortOrder;          // 显示排序（升序）
     private String qrContent;       // 已储存的二维码内容
+    /** 挂在哪个娃下面（children.id），0 = 还没归属 */
+    private long childId;
+    /** 场景标签，比如「奥数」：同一个娃的不同包靠它区分，留空表示不限场景 */
+    private String label;
 
     // 默认值
     public static final int DEFAULT_RSSI_1M = -59;
@@ -26,6 +30,8 @@ public class BeaconEntity {
         this.createTime = System.currentTimeMillis();
         this.sortOrder = 0;
         this.qrContent = "";
+        this.childId = 0;
+        this.label = "";
     }
 
     // Getters & Setters
@@ -65,6 +71,16 @@ public class BeaconEntity {
 
     public String getQrContent() { return qrContent == null ? "" : qrContent; }
     public void setQrContent(String qrContent) { this.qrContent = qrContent; }
+
+    /** 归属的娃，0 = 还没归属（首页加载时会自动并到第一个娃） */
+    public long getChildId() { return childId; }
+    public void setChildId(long childId) { this.childId = Math.max(0, childId); }
+
+    /** 场景标签，比如「奥数」；空串 = 不限场景，推送文案走时间段兜底 */
+    public String getLabel() { return label == null ? "" : label.trim(); }
+    public void setLabel(String label) { this.label = label == null ? "" : label.trim(); }
+
+    public boolean hasLabel() { return !getLabel().isEmpty(); }
 
     /**
      * 获取 UUID 的无横线小写形式，用于 BLE 扫描匹配

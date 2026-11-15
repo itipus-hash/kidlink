@@ -44,10 +44,12 @@ import java.util.Locale;
  * 蓝牙信标管理界面
  *
  * 网格手势（按下即滑就拖，三种手势互不打架）：
- * - 点按（未移动就松手）→ 选中 / 取消选中（绿色高亮，最多 3 个）
+ * - 点按（未移动就松手）→ 打开信标信息（和长按一样）
  * - 移动超过 touchSlop → 拖动排序（占位格永远是最后一格）
- * - 按住不动 ≥500ms → 弹出菜单（自定义名称 / 分享信标 / 查看信标信息）
- *   清除冷却、解绑设备、删除信标都收在「查看信标信息」里，菜单只留常用的三项
+ * - 按住不动 ≥500ms → 打开信标信息
+ *
+ * 「哪颗信标属于哪个娃、代表哪个包」不是在这一层选的，而是进信标信息里设的 ——
+ * 归属是低频操作，摆在外面对着网格点来点去，很容易误触成排序。
  *
  * 最后一格永远是 [+ 添加] 占位格：点击弹出「蓝牙扫描 / 扫码导入」选择。
  */
@@ -70,8 +72,10 @@ public class BeaconManagerActivity extends AppCompatActivity {
     private RecyclerView recyclerView;
     /** 空状态里的购买建议整块（有信标就隐藏） */
     private View layoutBuyTip;
-    /** 已选中的信标 id，最多 BeaconPrefs.MAX_SELECTED 个 */
-    private List<Long> selectedIds = new ArrayList<>();
+    /** children.id → 娃名，卡片第二行要用，reload 时刷一次就够 */
+    private final java.util.Map<Long, String> childNames = new java.util.HashMap<>();
+    /** 当前打开的信标信息弹窗 —— 点「所属娃 / 场景标签」前要先关掉，免得弹窗叠弹窗 */
+    private androidx.appcompat.app.AlertDialog infoDialog;
 
     private final Handler handler = new Handler(Looper.getMainLooper());
 
@@ -89,7 +93,6 @@ public class BeaconManagerActivity extends AppCompatActivity {
         setContentView(R.layout.activity_beacon_manager);
 
         dbHelper = new BeaconDbHelper(this);
-        selectedIds = BeaconPrefs.getSelectedIds(this);
 
         MaterialToolbar toolbar = findViewById(R.id.toolbar);
         toolbar.setNavigationOnClickListener(v -> finish());
@@ -140,8 +143,12 @@ public class BeaconManagerActivity extends AppCompatActivity {
     }
 
     private void reload() {
-        BeaconPrefs.ensureAutoSelect(this, dbHelper);
-        selectedIds = BeaconPrefs.getSelectedIds(this);
+        // 每颗信标都必须挂在某个娃下面，卡片第二行才有东西可显示
+        dbHelper.ensureChildren();
+        childNames.clear();
+        for (com.kidlink.beacon.data.ChildEntity c : dbHelper.getAllChildren()) {
+            childNames.put(c.getId(), c.displayName());
+        }
         List<BeaconEntity> all = dbHelper.getAllBeacons();
         adapter.setData(all);
         if (layoutBuyTip != null) {
@@ -231,28 +238,101 @@ public class BeaconManagerActivity extends AppCompatActivity {
                 == PackageManager.PERMISSION_GRANTED;
     }
 
-    // === 选择 / 菜单 ===
+    // === 归属（娃 / 场景标签） ===
 
     /**
-     * 单击：点一下选中，再点一下取消。
-     * 最多同时选中 2 个（超出给提示），最少保留 1 个（最后一个不让取消）。
+     * 卡片第二行：「许小鱼」或「许小鱼 · 奥数」。
+     * 一眼能看出这颗信标在谁的哪个包上，不用挨个点进信息页确认。
      */
-    private void selectBeacon(BeaconEntity b) {
-        boolean wasSelected = selectedIds.contains(b.getId());
-        int r = BeaconPrefs.toggleSelected(this, b.getId());
-        if (r == BeaconPrefs.TOGGLE_LIMIT) {
-            tipLong(getString(R.string.select_limit_reached, BeaconPrefs.MAX_SELECTED));
-            return;
+    private String tagOf(BeaconEntity b) {
+        String childName = childNames.get(b.getChildId());
+        if (childName == null) childName = "";
+        if (childName.isEmpty()) return b.getLabel();
+        return b.hasLabel() ? childName + " · " + b.getLabel() : childName;
+    }
+
+    /**
+     * 把信标移进某个娃的分组。
+     *
+     * 新建娃放在同一个列表的最后一项：用户挪信标的时候，往往正是在那一刻
+     * 意识到「这个娃还没建过」，让他退出再找入口不如就地建。
+     */
+    private void pickChild(BeaconEntity b) {
+        final List<com.kidlink.beacon.data.ChildEntity> children = dbHelper.getAllChildren();
+        final CharSequence[] items = new CharSequence[children.size() + 1];
+        for (int i = 0; i < children.size(); i++) {
+            items[i] = children.get(i).displayName();
         }
-        if (r == BeaconPrefs.TOGGLE_KEEP_ONE) {
-            tipLong(getString(R.string.keep_one_selected));
-            return;
-        }
-        selectedIds = BeaconPrefs.getSelectedIds(this);
-        adapter.notifyDataSetChanged();
-        tip(wasSelected
-                ? getString(R.string.unselected_toast, b.getName())
-                : getString(R.string.selected_toast, b.getName()));
+        items[children.size()] = getString(R.string.info_child_new);
+
+        new MaterialAlertDialogBuilder(this)
+                .setTitle(R.string.info_child_title)
+                .setItems(items, (d, which) -> {
+                    if (which < children.size()) {
+                        com.kidlink.beacon.data.ChildEntity target = children.get(which);
+                        dbHelper.setBeaconChild(b.getId(), target.getId());
+                        reload();
+                        tip(getString(R.string.info_child_moved, target.displayName()));
+                    } else {
+                        askNewChild(b);
+                    }
+                })
+                .setNegativeButton(R.string.cancel, null)
+                .show();
+    }
+
+    private void askNewChild(BeaconEntity b) {
+        EditText input = new EditText(this);
+        input.setHint(R.string.info_child_hint);
+        input.setSingleLine(true);
+
+        new MaterialAlertDialogBuilder(this)
+                .setTitle(R.string.info_child_new)
+                .setView(wrapInPadding(input))
+                .setNegativeButton(R.string.cancel, null)
+                .setPositiveButton(R.string.save, (d, w) -> {
+                    String name = input.getText().toString().trim();
+                    if (name.isEmpty()) {
+                        tip(getString(R.string.rename_empty));
+                        return;
+                    }
+                    long id = dbHelper.insertChild(name);
+                    if (id <= 0) {
+                        tip(getString(R.string.info_child_new_failed));
+                        return;
+                    }
+                    dbHelper.setBeaconChild(b.getId(), id);
+                    reload();
+                    tip(getString(R.string.info_child_moved, name));
+                })
+                .show();
+    }
+
+    /**
+     * 场景标签：「奥数」「钢琴」这种，决定推送文案的括号里写什么。
+     *
+     * 留空 = 不限场景，推送时退回按时间段分组猜。所以这里必须允许存空串，
+     * 不校验「不能为空」—— 「清空标签」本身就是一个正当操作。
+     */
+    private void editLabel(BeaconEntity b) {
+        EditText input = new EditText(this);
+        input.setText(b.getLabel());
+        input.setSelection(input.getText().length());
+        input.setHint(R.string.info_label_hint);
+        input.setSingleLine(true);
+
+        new MaterialAlertDialogBuilder(this)
+                .setTitle(R.string.info_label_title)
+                .setMessage(R.string.info_label_msg)
+                .setView(wrapInPadding(input))
+                .setNegativeButton(R.string.cancel, null)
+                .setPositiveButton(R.string.save, (d, w) -> {
+                    b.setLabel(input.getText().toString());
+                    dbHelper.updateBeacon(b);
+                    reload();
+                    tip(getString(R.string.info_label_saved));
+                })
+                .show();
     }
 
     // === 自定义名称 ===
@@ -288,8 +368,10 @@ public class BeaconManagerActivity extends AppCompatActivity {
      * 冷却时间是按信标分开记的，两个信标互不影响 —— 这里只清当前这个。
      */
     private void resetPushCooldown(BeaconEntity b) {
-        long last = Math.max(BeaconPrefs.getLastPushAt(this, b.getId()),
-                BeaconPrefs.getLastApproachAt(this, b.getId()));
+        // 冷却按娃算（一趟带的两个包只推一条），所以清的是这个娃的冷却
+        long childId = b.getChildId();
+        long last = Math.max(BeaconPrefs.getLastPushAtByChild(this, childId),
+                BeaconPrefs.getLastApproachAtByChild(this, childId));
         if (last <= 0) {
             tip(getString(R.string.cooldown_none, b.getName()));
             return;
@@ -300,19 +382,30 @@ public class BeaconManagerActivity extends AppCompatActivity {
             return;
         }
         // 两种推送的时间戳一起清 = 立刻可以再推（含「已靠近」）
-        BeaconPrefs.clearCooldown(this, b.getId());
+        BeaconPrefs.clearCooldownByChild(this, childId);
         tipLong(getString(R.string.cooldown_reset_done, b.getName()));
     }
 
     /**
-     * 信标信息：UUID / Major·Minor·蓝牙地址 / 上次推送·冷却，底部一排操作。
-     * 长按卡片直接进这里，已经没有单独的长按菜单了。
+     * 信标信息：归属 / 场景标签 / UUID / Major·Minor·蓝牙地址 / 上次推送·冷却，底部一排操作。
+     * 长按卡片直接进这里，点击卡片也进这里。
      */
     private void showBeaconInfo(BeaconEntity b) {
         LinearLayout box = new LinearLayout(this);
         box.setOrientation(LinearLayout.VERTICAL);
         int pad = dp(20);
         box.setPadding(pad, dp(4), pad, dp(4));
+
+        // 归属和场景标签放在最上面：这两项决定首页显示什么、推送写什么，
+        // 是这个页面里唯一会经常改的东西
+        String childName = childNames.get(b.getChildId());
+        addPickerRow(box, R.string.info_child,
+                childName == null || childName.isEmpty()
+                        ? getString(R.string.info_child_none) : childName,
+                v -> { dismissInfo(); pickChild(b); });
+        addPickerRow(box, R.string.info_label,
+                b.hasLabel() ? b.getLabel() : getString(R.string.info_label_none),
+                v -> { dismissInfo(); editLabel(b); });
 
         addInfoRow(box, R.string.info_uuid, b.getUuidFormatted(), true);
         // 三件套和蓝牙地址挤一行：同型号信标只有末尾那串地址不同，放一起最好对比
@@ -321,10 +414,9 @@ public class BeaconManagerActivity extends AppCompatActivity {
                         + (b.hasMac() ? b.getMac() : getString(R.string.info_mac_short_none)),
                 true);
 
-        // 「上次推送」取两种推送里更近的那一次：近距离和接送成功各有各的冷却，
-        // 但用户关心的是「这个信标最近一次什么时候推过」。
-        long last = Math.max(BeaconPrefs.getLastPushAt(this, b.getId()),
-                BeaconPrefs.getLastApproachAt(this, b.getId()));
+        // 「上次推送」取两种推送里更近的那一次（按娃记的冷却）
+        long last = Math.max(BeaconPrefs.getLastPushAtByChild(this, b.getChildId()),
+                BeaconPrefs.getLastApproachAtByChild(this, b.getChildId()));
         long leftMs = BeaconPrefs.getPushCooldownMin(this) * 60_000L
                 - (System.currentTimeMillis() - last);
         String lastText = last <= 0
@@ -378,6 +470,7 @@ public class BeaconManagerActivity extends AppCompatActivity {
                         .create();
         // 底部不放「确定」，点弹窗外面的空白处直接关掉
         dialog.setCanceledOnTouchOutside(true);
+        infoDialog = dialog;
 
         btnRename.setOnClickListener(v -> {
             dialog.dismiss();
@@ -418,9 +511,48 @@ public class BeaconManagerActivity extends AppCompatActivity {
         return tv;
     }
 
-    /** 一行信息：上面一句灰色小标签，下面一行可长按复制的值 */
-    private void addInfoRow(LinearLayout parent, int labelRes, String value, boolean mono) {
+    /**
+     * 一行「可点的设置项」：灰色小标签 + 加粗的主色值。
+     * 和只读的 addInfoRow 区分开 —— 这两行（所属娃 / 场景标签）是能改的，
+     * 用主色 + 点击涟漪暗示它可点，不用另外加按钮。
+     */
+    private void addPickerRow(LinearLayout parent, int labelRes, String value,
+                              View.OnClickListener onClick) {
         TextView label = new TextView(this);
+        label.setText(labelRes);
+        label.setTextSize(12);
+        label.setTextColor(ContextCompat.getColor(this, R.color.text_secondary));
+        LinearLayout.LayoutParams lpLabel = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        lpLabel.topMargin = dp(14);
+        parent.addView(label, lpLabel);
+
+        TextView tv = new TextView(this);
+        tv.setText(value);
+        tv.setTextSize(15);
+        tv.setTypeface(null, android.graphics.Typeface.BOLD);
+        tv.setTextColor(ContextCompat.getColor(this, R.color.primary));
+        tv.setPadding(0, dp(8), 0, dp(8));
+        android.util.TypedValue out = new android.util.TypedValue();
+        if (getTheme().resolveAttribute(android.R.attr.selectableItemBackground, out, true)) {
+            tv.setBackgroundResource(out.resourceId);
+        }
+        tv.setOnClickListener(onClick);
+        parent.addView(tv, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+    }
+
+    /** 关掉正在显示的信标信息弹窗，避免「弹窗上再叠一层弹窗」 */
+    private void dismissInfo() {
+        try {
+            if (infoDialog != null && infoDialog.isShowing()) infoDialog.dismiss();
+        } catch (Exception ignored) {
+        }
+        infoDialog = null;
+    }
+
+    /** 一行信息：上面一句灰色小标签，下面一行可长按复制的值 */
+    private void addInfoRow(LinearLayout parent, int labelRes, String value, boolean mono) {        TextView label = new TextView(this);
         label.setText(labelRes);
         label.setTextSize(12);
         label.setTextColor(ContextCompat.getColor(this, R.color.text_secondary));
@@ -455,7 +587,7 @@ public class BeaconManagerActivity extends AppCompatActivity {
                 .setNegativeButton(R.string.cancel, null)
                 .setPositiveButton(R.string.menu_delete, (d, w) -> {
                     dbHelper.deleteBeacon(b.getId());
-                    // reload 里的 ensureAutoSelect → pruneSelected 会把失效 id 清掉
+                    // 删掉最后一颗信标后，它的娃还在库里，但首页只显示「名下有信标」的娃，不会留空面板
                     reload();
                     tip(getString(R.string.deleted_toast, b.getName()));
                 })
@@ -557,26 +689,21 @@ public class BeaconManagerActivity extends AppCompatActivity {
             }
 
             void bind(BeaconEntity b) {
-                boolean selected = selectedIds.contains(b.getId());
-
+                // 卡片高亮已经没有「选中」的意思了（首页改按娃显示），统一取消描边，
+                // 靠第二行那行归属文字来区分
                 card.setStrokeWidth(dp(2));
-                card.setStrokeColor(selected
-                        ? ContextCompat.getColor(BeaconManagerActivity.this, R.color.primary)
-                        : ContextCompat.getColor(BeaconManagerActivity.this, R.color.transparent));
-                miniCircle.setBackgroundResource(selected
-                        ? R.drawable.bg_circle_mini_green
-                        : R.drawable.bg_circle_mini_gray);
+                card.setStrokeColor(ContextCompat.getColor(BeaconManagerActivity.this,
+                        R.color.transparent));
+                miniCircle.setBackgroundResource(R.drawable.bg_circle_mini_gray);
 
                 txtName.setText(b.getName());
                 txtName.setTextColor(ContextCompat.getColor(BeaconManagerActivity.this,
-                        selected ? R.color.primary_dark : R.color.text_primary));
+                        R.color.text_primary));
 
-                if (selected) {
-                    txtTag.setText(R.string.tag_current);
-                    txtTag.setTextColor(ContextCompat.getColor(BeaconManagerActivity.this, R.color.primary));
-                } else {
-                    txtTag.setText("");
-                }
+                String tag = tagOf(b);
+                txtTag.setText(tag);
+                txtTag.setTextColor(ContextCompat.getColor(BeaconManagerActivity.this,
+                        R.color.text_secondary));
 
                 attachGestures();
             }
@@ -708,8 +835,8 @@ public class BeaconManagerActivity extends AppCompatActivity {
                                     && !moved && !longHoldFired) {
                                 int pos = getBindingAdapterPosition();
                                 if (pos != RecyclerView.NO_POSITION && pos < items.size()) {
-                                    // 单击只做"选为当前信标"；检测间隔/变色距离已移到设置页
-                                    selectBeacon(items.get(pos));
+                                    // 单击 = 打开信息页（设置所属娃 / 场景标签都在里面）
+                                    showBeaconInfo(items.get(pos));
                                 }
                             }
                             return true;

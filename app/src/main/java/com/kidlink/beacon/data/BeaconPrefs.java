@@ -412,6 +412,71 @@ public class BeaconPrefs {
                 .edit().putBoolean(KEY_ARRIVAL_INSIDE + "_" + beaconId, inside).apply();
     }
 
+    // === 按娃记冷却 / 进区标记 ===
+    //
+    // 为什么要从「按信标」改成「按娃」：
+    // 书包和奥数包各挂一颗信标，同一个娃。按信标算的话，一趟会推两条
+    // 「接到许小鱼」；按娃算，两个包谁先到都只算这一趟，只推一条。
+    //
+    // key 前缀带一个 c（child），和老版本按 beaconId 存的那些互不干扰 ——
+    // 升级后旧冷却读不到了，等于冷却复位一次，可以接受。
+
+    private static final String KEY_LAST_PUSH_AT_C = "c_last_push_at";
+    private static final String KEY_LAST_APPROACH_AT_C = "c_last_approach_at";
+    private static final String KEY_APPROACH_INSIDE_C = "c_approach_inside";
+    private static final String KEY_ARRIVAL_INSIDE_C = "c_arrival_inside";
+
+    public static long getLastPushAtByChild(Context ctx, long childId) {
+        if (childId <= 0) return 0L;
+        return sp(ctx).getLong(KEY_LAST_PUSH_AT_C + "_" + childId, 0L);
+    }
+
+    public static void setLastPushAtByChild(Context ctx, long childId, long at) {
+        if (childId <= 0) return;
+        sp(ctx).edit().putLong(KEY_LAST_PUSH_AT_C + "_" + childId, at).apply();
+    }
+
+    public static long getLastApproachAtByChild(Context ctx, long childId) {
+        if (childId <= 0) return 0L;
+        return sp(ctx).getLong(KEY_LAST_APPROACH_AT_C + "_" + childId, 0L);
+    }
+
+    public static void setLastApproachAtByChild(Context ctx, long childId, long at) {
+        if (childId <= 0) return;
+        sp(ctx).edit().putLong(KEY_LAST_APPROACH_AT_C + "_" + childId, at).apply();
+    }
+
+    public static boolean isApproachInsideByChild(Context ctx, long childId) {
+        if (childId <= 0) return false;
+        return sp(ctx).getBoolean(KEY_APPROACH_INSIDE_C + "_" + childId, false);
+    }
+
+    public static void setApproachInsideByChild(Context ctx, long childId, boolean inside) {
+        if (childId <= 0) return;
+        sp(ctx).edit().putBoolean(KEY_APPROACH_INSIDE_C + "_" + childId, inside).apply();
+    }
+
+    public static boolean isArrivalInsideByChild(Context ctx, long childId) {
+        if (childId <= 0) return false;
+        return sp(ctx).getBoolean(KEY_ARRIVAL_INSIDE_C + "_" + childId, false);
+    }
+
+    public static void setArrivalInsideByChild(Context ctx, long childId, boolean inside) {
+        if (childId <= 0) return;
+        sp(ctx).edit().putBoolean(KEY_ARRIVAL_INSIDE_C + "_" + childId, inside).apply();
+    }
+
+    /** 把一个娃的推送冷却和「已在区内」标记一起清掉 */
+    public static void clearCooldownByChild(Context ctx, long childId) {
+        if (childId <= 0) return;
+        sp(ctx).edit()
+                .remove(KEY_LAST_PUSH_AT_C + "_" + childId)
+                .remove(KEY_LAST_APPROACH_AT_C + "_" + childId)
+                .remove(KEY_APPROACH_INSIDE_C + "_" + childId)
+                .remove(KEY_ARRIVAL_INSIDE_C + "_" + childId)
+                .apply();
+    }
+
     // === 后台扫描 / 到达提醒 ===
     //
     // 后台运行和扫描是固定开启的，没有开关（前台服务常驻），

@@ -271,7 +271,8 @@ public class ScanBeaconActivity extends AppCompatActivity {
 
         long id = dbHelper.insertBeacon(beacon);
         if (id > 0) {
-            com.kidlink.beacon.data.BeaconPrefs.ensureAutoSelect(this, dbHelper);
+            // 新信标要立刻挂到某个娃下面，否则首页加载前它是个「没归属」的孤儿
+            dbHelper.ensureChildren();
             Feedback.show(this, getString(R.string.scan_beacon_saved, name));
             setResult(RESULT_OK);
             finish();

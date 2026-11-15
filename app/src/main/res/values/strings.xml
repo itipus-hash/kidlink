@@ -6,7 +6,9 @@
     <string name="add_beacon">添加信标</string>
     <string name="manage_beacons">信标管理</string>
     <string name="no_beacon_tip">还没有添加蓝牙信标，点右上角图标添加一个</string>
-    <string name="no_beacon_selected">未选择任何信标\n点右上角图标进入信标管理</string>
+    <string name="no_beacon_selected">还没有添加信标\n点右上角图标进入信标管理</string>
+    <!-- 首页：按娃显示时，一个娃名下有多颗信标才显示这行小字 -->
+    <string name="main_current_beacon">当前：%s</string>
 
     <!-- 没有信标时的购买建议（仅空状态显示） -->
     <string name="buy_beacon_title">还没有信标？可以先买这个</string>
@@ -28,7 +30,7 @@ Eddystone（Google 的另一套格式）和普通蓝牙设备做不到这点：
 
     <!-- Beacon manager -->
     <string name="beacon_manager_title">蓝牙信标</string>
-    <string name="beacon_manager_hint">点击选中 / 再点取消（最多 3 个，至少 1 个）\n长按查看信标信息 · 按住卡片滑动可排序</string>
+    <string name="beacon_manager_hint">点击卡片查看信标信息 · 按住拖动可排序\n一个娃可以挂多颗信标（书包一颗、奥数包一颗），首页按娃显示</string>
     <string name="add_beacon_hint">扫描或扫码</string>
     <string name="add_by_ble">蓝牙扫描附近信标</string>
     <string name="add_by_qr">扫描二维码导入</string>
@@ -46,6 +48,19 @@ Eddystone（Google 的另一套格式）和普通蓝牙设备做不到这点：
 
     <!-- 信标信息 -->
     <string name="beacon_info_title">信标信息</string>
+    <string name="info_child">所属娃</string>
+    <string name="info_child_none">未归属 · 点这里选</string>
+    <string name="info_child_title">移入哪个娃</string>
+    <string name="info_child_new">＋ 新建一个娃</string>
+    <string name="info_child_hint">娃的名字，例如：许小鱼</string>
+    <string name="info_child_moved">已移入「%s」</string>
+    <string name="info_child_new_failed">新建失败，请重试</string>
+    <string name="info_label">场景标签</string>
+    <string name="info_label_none">未设置 · 走时间段</string>
+    <string name="info_label_title">场景标签</string>
+    <string name="info_label_msg">填了就用它当推送的括号，例如填「奥数」→「接到许小鱼(奥数)」。\n留空则按设置里的时间段类型判断。</string>
+    <string name="info_label_hint">例如：奥数、钢琴（留空表示不限）</string>
+    <string name="info_label_saved">已保存</string>
     <string name="info_uuid">UUID</string>
     <string name="info_major_minor">Major / Minor / 蓝牙地址</string>
     <string name="info_mac_short_none">未记录</string>
