@@ -776,7 +776,16 @@ public class BeaconManagerActivity extends AppCompatActivity {
         List<ChildEntity> children = dbHelper.getAllChildren();
         List<BeaconEntity> owned = dbHelper.getBeaconsByChild(child.getId());
 
-        if (children.size() <= 1 && !owned.isEmpty()) {
+        // 名下没有信标：删的就是个空分组，不用问，直接删
+        if (owned.isEmpty()) {
+            BeaconPrefs.clearTimeGroupsFor(this, child.getId());
+            dbHelper.deleteChild(child.getId());
+            reload();
+            tip(getString(R.string.child_deleted, child.displayName()));
+            return;
+        }
+
+        if (children.size() <= 1) {
             // 只剩这一个娃：删了分组信标就没地方挂了，所以连信标一起删
             new MaterialAlertDialogBuilder(this)
                     .setTitle(getString(R.string.child_delete_title, child.displayName()))
@@ -793,9 +802,7 @@ public class BeaconManagerActivity extends AppCompatActivity {
             return;
         }
 
-        String msg = owned.isEmpty()
-                ? getString(R.string.child_delete_msg_empty, child.displayName())
-                : getString(R.string.child_delete_msg, child.displayName(), owned.size());
+        String msg = getString(R.string.child_delete_msg, child.displayName(), owned.size());
 
         new MaterialAlertDialogBuilder(this)
                 .setTitle(getString(R.string.child_delete_title, child.displayName()))
