@@ -17,8 +17,6 @@ import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewConfiguration;
 import android.view.ViewGroup;
-import android.widget.EditText;
-import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
@@ -84,15 +82,18 @@ public class BeaconManagerActivity extends AppCompatActivity {
 
     /** RSSI 平滑窗口：和首页一致，5 个包取平均 */
     private static final int RSSI_WINDOW = 5;
-    /**
-     * 多久没再收到广播就算「未连接」。
-     *
-     * 信标一般 1 秒广播一次，留 5 秒的余量：掏手机、卡片刚滚出来、
-     * 信号偶尔丢两个包，都不至于让绿点闪成灰的。
-     */
-    private static final long LIVE_STALE_MS = 5000L;
-    /** 状态刷新节拍：只用来把「超时没信号」的卡片刷回灰色 */
+    /** 状态刷新节拍：用来把「几秒前」这个数字一秒一秒顶上去 */
     private static final long LIVE_TICK_MS = 1000L;
+    /**
+     * 绿过就一直绿，超过这么久一条广播都没有才变灰。
+     *
+     * 比「刚刚」那条门槛宽松得多，但这正是这一页要的：家长问的是
+     * 「东西在不在包里」——信标隔着书包、手机塞兜里，丢几个包不等于东西没了。
+     * 真的不在场时，一分钟也足够看出来了。
+     */
+    private static final long LIVE_GRAY_MS = 60_000L;
+    /** 这么久一个包都没来就悄悄重启一次扫描（比变灰早，扫描被系统掐了也能自己救回来） */
+    private static final long LIVE_REVIVE_MS = 30_000L;
 
     /**
      * 淘宝淘口令，不是短链。
@@ -188,6 +189,8 @@ public class BeaconManagerActivity extends AppCompatActivity {
         long at;
         /** 上一次写进卡片的距离，用来做显示迟滞（-1 = 还没写过） */
         double shownDistance = -1;
+        /** 上一秒写的是「信号 + 距离」还是「几秒前」，切换时要强制重写一次 */
+        boolean showingFresh;
     }
 
     private final ActivityResultLauncher<String[]> permissionLauncher =
@@ -329,12 +332,26 @@ public class BeaconManagerActivity extends AppCompatActivity {
     }
 
     /**
+     * 多久之内算「刚刚」—— 直接复用设置里的「图标颜色超时时间」（检测间隔）。
+     *
+     * 那个设置本身就是「多久没收到广播就当它不在」，卡片的绿色和首页的圆环说的
+     * 是同一件事，读数也该是同一套：这段时间内屏幕上只写信号和距离，
+     * 不出现「几秒前」这种提示，免得用户以为松了。
+     *
+     * 上限压到变灰的一分钟：检测间隔要是被设成 300 秒，照抄的话「几秒前」
+     * 就永远不会出现（先变灰了）。
+     */
+    private long freshMs() {
+        long base = Math.max(1, BeaconPrefs.getDetectIntervalSec(this)) * 1000L;
+        return Math.min(base, LIVE_GRAY_MS);
+    }
+
+    /**
      * 兜底：蓝牙开着、权限有、但扫描器认为自己在扫却一个包都没来的时候，重开一次。
      *
      * 只在「本来就在扫」的前提下重启是不行的 —— 系统把扫描掐掉时内部标志还是 true。
-     * 所以这里改用「最近一次收到包的时间」判断：超过 2 个失效周期还没动静，
-     * 就停一次再开，等价于把扫描链路复位。信标真的走远了也不会因此乱跳，
-     * 因为卡片照样灰着，只是后台多扫了一次。
+     * 所以这里改用「最近一次收到包的时间」判断，安静够久就停一次再开，等价于把扫描链路复位。
+     * 30 秒比「变灰」的一分钟早，所以扫描被掐住时卡片还没变灰就已经自救了。
      */
     private void ensureLiveScanning() {
         if (liveScanner == null) return;
@@ -347,7 +364,7 @@ public class BeaconManagerActivity extends AppCompatActivity {
         for (Live l : liveById.values()) {
             if (l.at > lastPacket) lastPacket = l.at;
         }
-        if (lastPacket > 0 && System.currentTimeMillis() - lastPacket > LIVE_STALE_MS * 2) {
+        if (lastPacket > 0 && System.currentTimeMillis() - lastPacket > LIVE_REVIVE_MS) {
             liveScanner.stopScan();
             liveScanner.startScan();
         }
@@ -703,26 +720,13 @@ public class BeaconManagerActivity extends AppCompatActivity {
     }
 
     private void askRenameChild(ChildEntity child) {
-        EditText input = new EditText(this);
-        input.setText(child.getName());
-        input.setSelection(input.getText().length());
-        input.setHint(R.string.info_child_hint);
-        input.setSingleLine(true);
-
-        new MaterialAlertDialogBuilder(this)
-                .setTitle(getString(R.string.child_rename_title, child.displayName()))
-                .setView(wrapInPadding(input))
-                .setNegativeButton(R.string.cancel, null)
-                .setPositiveButton(R.string.save, (d, w) -> {
-                    String name = input.getText().toString().trim();
-                    if (name.isEmpty()) {
-                        tip(getString(R.string.rename_empty));
-                        return;
-                    }
+        showNameDialog(getString(R.string.child_rename_title, child.displayName()),
+                getString(R.string.rename_current_hint, child.displayName()),
+                name -> {
                     dbHelper.renameChild(child.getId(), name);
                     reload();
-                })
-                .show();
+                    return true;
+                });
     }
 
     /**
@@ -796,24 +800,12 @@ public class BeaconManagerActivity extends AppCompatActivity {
      *               （从页面底部「＋ 新建一个娃」进来就是这种）
      */
     private void askNewChild(BeaconEntity beacon) {
-        EditText input = new EditText(this);
-        input.setHint(R.string.info_child_hint);
-        input.setSingleLine(true);
-
-        new MaterialAlertDialogBuilder(this)
-                .setTitle(R.string.info_child_new)
-                .setView(wrapInPadding(input))
-                .setNegativeButton(R.string.cancel, null)
-                .setPositiveButton(R.string.save, (d, w) -> {
-                    String name = input.getText().toString().trim();
-                    if (name.isEmpty()) {
-                        tip(getString(R.string.rename_empty));
-                        return;
-                    }
+        showNameDialog(getString(R.string.info_child_new), getString(R.string.info_child_hint),
+                name -> {
                     long id = dbHelper.insertChild(name);
                     if (id <= 0) {
                         tip(getString(R.string.info_child_new_failed));
-                        return;
+                        return false;
                     }
                     if (beacon != null) {
                         dbHelper.setBeaconChild(beacon.getId(), id);
@@ -823,8 +815,8 @@ public class BeaconManagerActivity extends AppCompatActivity {
                         reload();
                         tip(getString(R.string.child_created, name));
                     }
-                })
-                .show();
+                    return true;
+                });
     }
 
     // === 推送冷却 / 信标信息 ===
@@ -950,28 +942,25 @@ public class BeaconManagerActivity extends AppCompatActivity {
 
     // === 自定义名称 ===
 
-    private void showRenameDialog(BeaconEntity b) {
-        EditText input = new EditText(this);
-        input.setText(b.getName());
-        input.setSelection(input.getText().length());
-        input.setHint(R.string.rename_hint);
-        input.setSingleLine(true);
+    /**
+     * 统一的名字输入弹窗（信标改名 / 娃改名 / 新建娃 三处共用）。
+     * 具体行为写在 {@link com.kidlink.beacon.ui.widget.NameDialog} 里，
+     * 扫描页加完信标也调同一个 —— 两处手感必须一样。
+     */
+    private void showNameDialog(CharSequence title, CharSequence hint,
+                                java.util.function.Predicate<String> saver) {
+        com.kidlink.beacon.ui.widget.NameDialog.show(this, title, hint, saver);
+    }
 
-        new MaterialAlertDialogBuilder(this)
-                .setTitle(R.string.rename_title)
-                .setView(wrapInPadding(input))
-                .setNegativeButton(R.string.cancel, null)
-                .setPositiveButton(R.string.save, (d, w) -> {
-                    String name = input.getText().toString().trim();
-                    if (name.isEmpty()) {
-                        tip(getString(R.string.rename_empty));
-                        return;
-                    }
+    private void showRenameDialog(BeaconEntity b) {
+        showNameDialog(getString(R.string.rename_title),
+                getString(R.string.rename_current_hint, b.getName()),
+                name -> {
                     b.setName(name);
                     dbHelper.updateBeacon(b);
                     reload();
-                })
-                .show();
+                    return true;
+                });
     }
 
     private LinearLayout actionRow() {
@@ -1081,16 +1070,6 @@ public class BeaconManagerActivity extends AppCompatActivity {
     }
 
     // === 工具 ===
-
-    private View wrapInPadding(View child) {
-        FrameLayout container = new FrameLayout(this);
-        int h = (int) (20 * getResources().getDisplayMetrics().density);
-        int v = (int) (8 * getResources().getDisplayMetrics().density);
-        container.setPadding(h, v, h, 0);
-        container.addView(child, new FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-        return container;
-    }
 
     private int dp(float value) {
         return (int) (value * getResources().getDisplayMetrics().density);
@@ -1231,24 +1210,30 @@ public class BeaconManagerActivity extends AppCompatActivity {
             /**
              * 按这颗信标的最新信号重画圆点和第二行字。
              *
-             * 连上（5 秒内收到过广播）：圆点绿 + 「-62 dBm · 约 1.2 米」
-             * 没连上：圆点灰 + 「未连接」
+             * 规则就三条：
+             * 1. 一次都没收到过 → 灰点 + 「未连接」
+             * 2. 收到过、并且还在「检测间隔」以内 → 绿点 + 「-62 dBm · 约 1.2 米」，不写秒前
+             * 3. 收到过、但已经超过检测间隔 → **还是绿点**，信号和距离保持上次的读数，
+             *    末尾补一句「8 秒前」：`-62 dBm · 约 1.2 米 · 8 秒前`
              *
-             * 距离做显示迟滞：同一档（1 米内 / 10 米内 / 10 米外）里抖动小于 0.3 米就不重写，
-             * RSSI 每包差个 2~3dB 是常态，不压一下数字会一直跳。
+             * 第 2 条就是「不超过设定的变灰时间，就别提几秒前」：那个设置本身已经是
+             * 「多久没信号算它不在」，在这个窗口里报秒数只会让人以为信号松了。
+             * 直到满一分钟（{@link #LIVE_GRAY_MS}）才回到灰点。
              */
             void applyLive(long now) {
                 if (beaconId <= 0) return;
                 Live live = liveById.get(beaconId);
-                boolean connected = live != null && now - live.at <= LIVE_STALE_MS;
 
-                if (!connected) {
+                if (live == null || now - live.at > LIVE_GRAY_MS) {
                     miniCircle.setBackgroundResource(R.drawable.bg_circle_mini_gray);
                     txtTag.setVisibility(View.VISIBLE);
                     txtTag.setTextColor(ContextCompat.getColor(BeaconManagerActivity.this,
                             R.color.text_secondary));
                     txtTag.setText(R.string.beacon_offline);
-                    if (live != null) live.shownDistance = -1;
+                    if (live != null) {
+                        live.shownDistance = -1;
+                        live.showingFresh = false;
+                    }
                     return;
                 }
 
@@ -1258,13 +1243,26 @@ public class BeaconManagerActivity extends AppCompatActivity {
                         R.color.primary));
 
                 String rssiText = getString(R.string.rssi_value, live.rssi);
-                boolean refresh = live.shownDistance < 0
-                        || DistanceText.bucketOf(live.distance) != DistanceText.bucketOf(live.shownDistance)
-                        || Math.abs(live.distance - live.shownDistance) >= 0.3;
-                if (refresh) {
-                    live.shownDistance = live.distance;
-                    txtTag.setText(getString(R.string.beacon_live_fmt, rssiText,
-                            DistanceText.format(BeaconManagerActivity.this, live.distance)));
+                long ageMs = now - live.at;
+
+                if (ageMs <= freshMs()) {
+                    // 距离做显示迟滞：同一档里抖动小于 0.3 米就不重写，数字才不跟着 RSSI 乱跳
+                    boolean refresh = live.shownDistance < 0 || !live.showingFresh
+                            || DistanceText.bucketOf(live.distance)
+                                != DistanceText.bucketOf(live.shownDistance)
+                            || Math.abs(live.distance - live.shownDistance) >= 0.3;
+                    live.showingFresh = true;
+                    if (refresh) {
+                        live.shownDistance = live.distance;
+                        txtTag.setText(getString(R.string.beacon_live_fmt, rssiText,
+                                DistanceText.format(BeaconManagerActivity.this, live.distance)));
+                    }
+                } else {
+                    // 掉包了：信号和距离都保持上一次的读数，只在末尾加「几秒前」
+                    live.showingFresh = false;
+                    txtTag.setText(getString(R.string.beacon_live_age_fmt, rssiText,
+                            DistanceText.format(BeaconManagerActivity.this, live.distance),
+                            ageMs / 1000));
                 }
             }
 

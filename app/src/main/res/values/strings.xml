@@ -10,6 +10,8 @@
     <string name="main_empty_add">＋ 添加信标</string>
     <!-- 首页：按娃显示时，一个娃名下有多颗信标才显示这行小字 -->
     <string name="main_current_beacon">当前：%s</string>
+    <!-- 一个娃挂了几颗信标时，前面再标一下数量：「2 个信标 当前：九五学堂」 -->
+    <string name="main_multi_beacon">%1$d 个信标 %2$s</string>
 
     <!-- 没有信标时的购买建议（仅空状态显示） -->
     <string name="buy_beacon_title">还没有信标？买同款最稳</string>
@@ -24,8 +26,9 @@
     <!-- Beacon manager -->
     <string name="beacon_manager_title">接娃信息</string>
     <string name="beacon_manager_hint">按娃分组。点分组头折叠 / 长按改名，点卡片看信息</string>
-    <!-- 卡片第二行：连上了显示「-62 dBm · 约 1.2 米」，连不上显示「未连接」 -->
+    <!-- 卡片第二行：连上了「-62 dBm · 约 1.2 米」；掉包了信号和距离保留，只在最后补一个「8 秒前」；一分钟没信号才是「未连接」 -->
     <string name="beacon_live_fmt">%1$s · %2$s</string>
+    <string name="beacon_live_age_fmt">%1$s · %2$s · %3$d 秒前</string>
     <string name="beacon_offline">未连接</string>
     <string name="add_beacon_hint">扫描或扫码</string>
     <string name="add_to_child">归到%s</string>
@@ -86,6 +89,11 @@
     <string name="rename_title">自定义名称</string>
     <string name="rename_hint">信标名称</string>
     <string name="rename_empty">名称不能为空</string>
+    <!-- 输入框是空的，原来叫什么写在这里，想不起来时能看见 -->
+    <string name="rename_current_hint">当前：%s</string>
+    <!-- 刚扫进来一颗信标时问名字（输入框留空，不塞占位提示） -->
+    <string name="beacon_name_new_title">自定义信标名称</string>
+    <string name="beacon_name_new_done">已改名为「%s」</string>
 
     <!-- Calibration -->
     <string name="settings_title">设置</string>
@@ -192,7 +200,9 @@
     <string name="time_group_days_hint">哪些天推送（全都不选 = 不推送）</string>
     <string name="time_group_delete">删除这个类型</string>
     <string name="time_group_title">时间段 · %s</string>
-    <string name="time_group_page_hint">这个娃的作息。命中哪个时间段，推送括号里就写哪个名字。\n排在前面的优先；按住右边的 ≡ 可以拖动排序。</string>
+    <string name="time_group_page_hint">这个娃的作息。\n命中哪个时间段，推送括号里就写哪个名字。\n排在前面的优先；按住右边的 ≡ 可以拖动排序。</string>
+    <!-- 这个娃挂了两颗以上信标时替换上面的提示：括号里写信标名，时间段名让位 -->
+    <string name="time_group_hint_multi">这个娃挂了 %1$d 颗信标。\n推送括号里优先写信标名（书包 / 奥数包），一看就知道接到的是哪个包。\n时间段的名字只在只有一颗信标时才用得上。</string>
     <string name="info_time_group">时间段</string>
     <string name="time_group_none">未设置 · 点这里添加</string>
     <string name="time_group_name_empty">名称不能为空</string>
@@ -313,11 +323,13 @@
     <string name="wifi_block_location_off">系统的「位置信息」关着，读不到 WiFi 名称，先打开再试</string>
     <string name="wifi_block_need_location">需要「位置信息」权限才能读到 WiFi 名称</string>
 
-    <!-- 开源免费 / 自愿捐赠（设置页最底部，常驻不折叠） -->    <string name="donate_title">开源免费</string>
-    <string name="donate_body">本项目完全免费开源，无付费解锁、无强制收费，所有功能都可以直接使用。\n\n如果觉得对你有帮助，可以自愿支持。捐献只代表心意，不会解锁任何功能，也不会因此获得新版本、新特性或优先支持。\n\n有任何建议、想法或问题，也欢迎发到上面的邮箱。</string>
+    <!-- 开源免费 / 自愿捐赠（设置页最底部；任意一组设置展开时整块隐藏，全折叠时才露出） -->
+    <string name="donate_title">开源免费</string>
+    <string name="donate_body">本项目完全免费开源，无付费解锁、无强制收费，所有功能都可以直接使用。\n\n如果觉得对你有帮助，可以自愿支持。捐献只代表心意，不会解锁任何功能，也不会因此获得新版本、新特性或优先支持。\n\n有任何建议、想法或问题，也欢迎发到下面的邮箱。</string>
     <string name="donate_mail">支付宝：supit@163.com</string>
     <string name="donate_tap_hint">轻触复制邮箱 · 仅自愿捐赠，不承诺售后、定制、优先服务</string>
     <string name="donate_copied">已复制 supit@163.com</string>
     <string name="donate_repo">项目地址：github.com/itipus-hash/kidlink</string>
+    <string name="donate_license">协议 MIT：欢迎复制、修改、二次分发，保留原作者署名。</string>
     <string name="open_repo_failed">无法打开浏览器，请手动访问</string>
 </resources>

@@ -24,8 +24,10 @@ import java.util.List;
  * 某一个娃的时间段类型：上学 / 放学 / 兴趣班 ……
  *
  * 这块 UI 原来在「设置 → 消息推送设置」里，是全局一份。搬到每个娃下面是因为
- * 不同娃的作息本来就不一样，全局一份只能顾一头；同时信标上的「场景标签」被删掉了，
- * 推送文案里那个括号从此只由时间段决定。
+ * 不同娃的作息本来就不一样，全局一份只能顾一头。
+ *
+ * 推送括号里的名字是**信标优先**：一个娃挂了两颗以上信标时写「（奥数包）」，
+ * 只有一颗时才退回去用这里的时间段名。所以页头提示会按信标数量换说法。
  *
  * 交互和原来一模一样：
  * - 点一行 → 编辑（名称 / 星期 / 多个时间段）
@@ -67,6 +69,15 @@ public class TimeGroupActivity extends AppCompatActivity {
         MaterialToolbar toolbar = findViewById(R.id.toolbar);
         toolbar.setTitle(getString(R.string.time_group_title, childName));
         toolbar.setNavigationOnClickListener(v -> finish());
+
+        // 提示按信标数量换一句话：挂了两颗以上，推送括号里写的其实是信标名，
+        // 时间段名根本轮不上 —— 不说明白的话，用户会以为自己辛苦配的时段没生效。
+        int beaconCount = new com.kidlink.beacon.data.BeaconDbHelper(this)
+                .getBeaconsByChild(childId).size();
+        TextView hint = findViewById(R.id.txt_time_group_hint);
+        if (beaconCount > 1) {
+            hint.setText(getString(R.string.time_group_hint_multi, beaconCount));
+        }
 
         timeGroupList = findViewById(R.id.time_group_list);
         txtTimeGroupEmpty = findViewById(R.id.txt_time_group_empty);

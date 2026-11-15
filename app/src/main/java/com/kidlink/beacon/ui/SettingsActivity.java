@@ -34,6 +34,9 @@ public class SettingsActivity extends AppCompatActivity {
     private TextView txtPicker;
     private TextView txtCooldown;
     private TextView txtInterval;
+    /** 页脚「开源免费」整块 + 它上面那条分隔线：展开任意一组设置时一起隐藏 */
+    private android.view.View rowDonate;
+    private android.view.View dividerDonate;
     private TextView txtNear;
     private TextView txtPushDistance;
     private TextView txtApproach;
@@ -132,6 +135,8 @@ public class SettingsActivity extends AppCompatActivity {
         swAutoMinimize = findViewById(R.id.sw_auto_minimize);
         txtWifiValue = findViewById(R.id.txt_wifi_value);
         txtWifiHint = findViewById(R.id.txt_wifi_hint);
+        rowDonate = findViewById(R.id.row_donate);
+        dividerDonate = findViewById(R.id.divider_donate);
 
         findViewById(R.id.row_push_header).setOnClickListener(v -> {
             pushExpanded = !pushExpanded;
@@ -208,6 +213,7 @@ public class SettingsActivity extends AppCompatActivity {
         groupPushDetails.setVisibility(pushExpanded
                 ? android.view.View.VISIBLE : android.view.View.GONE);
         txtPushChevron.setText(pushExpanded ? R.string.chevron_expanded : R.string.chevron_collapsed);
+        applyDonateVisibility();
     }
 
     /** 近距离提醒设置同理：默认折叠，点标题展开 */
@@ -215,6 +221,7 @@ public class SettingsActivity extends AppCompatActivity {
         groupNearDetails.setVisibility(nearExpanded
                 ? android.view.View.VISIBLE : android.view.View.GONE);
         txtNearChevron.setText(nearExpanded ? R.string.chevron_expanded : R.string.chevron_collapsed);
+        applyDonateVisibility();
     }
 
     /** 系统设置同理 */
@@ -223,6 +230,22 @@ public class SettingsActivity extends AppCompatActivity {
                 ? android.view.View.VISIBLE : android.view.View.GONE);
         txtSystemChevron.setText(systemExpanded
                 ? R.string.chevron_expanded : R.string.chevron_collapsed);
+        applyDonateVisibility();
+    }
+
+    /**
+     * 「开源免费」那一大段，只有三组设置**全部收起**时才露出来。
+     *
+     * 它本来就是页脚性质的说明，折叠状态下露在末尾不打扰；可一旦展开某一组，
+     * 内容一下子变长，这段话就被推到很深的地方 —— 想接着看下面别的开关时
+     * 先要划过一大段募捐文字。所以展开时直接收起来，连上面那条分隔线一起。
+     */
+    private void applyDonateVisibility() {
+        if (rowDonate == null) return;
+        final boolean anyExpanded = pushExpanded || nearExpanded || systemExpanded;
+        final int v = anyExpanded ? android.view.View.GONE : android.view.View.VISIBLE;
+        rowDonate.setVisibility(v);
+        if (dividerDonate != null) dividerDonate.setVisibility(v);
     }
 
     // === 分享 / 接收配置 ===

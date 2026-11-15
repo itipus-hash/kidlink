@@ -914,6 +914,10 @@ public class MainActivity extends AppCompatActivity {
     /**
      * 小字：这个娃现在身上是哪颗信标。
      * 一个娃只挂一颗信标时没必要写 —— 屏幕上多一行字，却没多出任何信息。
+     *
+     * 挂了两颗以上时，先说清「一共几颗」，再说「当前用的是哪颗」：
+     * 「2 个信标　当前：九五学堂」。只有「当前：」的话，家长不知道另一颗是没带
+     * 还是没扫到 —— 前面那个数量给了参照。
      */
     private void renderSub(Panel p) {
         if (p.sub == null) return;
@@ -921,7 +925,8 @@ public class MainActivity extends AppCompatActivity {
             p.sub.setText("");
             return;
         }
-        p.sub.setText(getString(R.string.main_current_beacon, p.best.getName()));
+        p.sub.setText(getString(R.string.main_multi_beacon, p.beacons.size(),
+                getString(R.string.main_current_beacon, p.best.getName())));
     }
 
     /**
@@ -1332,11 +1337,13 @@ public class MainActivity extends AppCompatActivity {
     }
 
     /**
-     * 接送成功的文案，两层：
+     * 接送成功的文案，括号里写什么分三层，**信标优先**：
      *
-     * 1. **时间段命中** → 「爸爸接到许小鱼了（放学）」
+     * 0. **这个娃挂了两颗以上信标** → 「爸爸接到许小鱼了（奥数包）」
+     *    家长最想知道的是「接到的是哪个包」，比「哪个时段」信息量大得多，所以时间段让位。
+     * 1. **只有一颗信标、且时间段命中** → 「爸爸接到许小鱼了（放学）」
      *    命中这个娃某个分组的时间窗口就用那个分组名，改名字文案自动跟着变。
-     *    时间段挂在娃下面（信标管理 → 分组里的「时间段」），每个娃一套。
+     *    时间段挂在娃下面（接娃信息 → 分组里的「时间段」），每个娃一套。
      * 2. **都没命中** → 「爸爸接到许小鱼了」
      *
      * 娃名取信标归属的那个娃，不是信标名 —— 家长要看到的是「接到了谁」，
@@ -1346,7 +1353,7 @@ public class MainActivity extends AppCompatActivity {
      * 文案里再写一遍 22:24 只会让句子变长、还容易被误读成「记录」而不是「通知」。
      *
      * 时间段是**精准匹配**：只在窗口内的那一分钟算命中，窗口结束就不再算。
-     * 晚接几分钟就会掉回第 3 层 —— 这是有意的，宁可少挂一个标签，
+     * 晚接几分钟就会掉回第 2 层 —— 这是有意的，宁可少挂一个标签，
      * 也不要让 12:20 接到的娃被标成「放学」。想覆盖晚接就把那个分组的时间段拉长。
      * 分组还带星期维度：不在它勾选的星期里就跳过。
      * 多个分组同时命中时按设置里的先后顺序取第一个（正常配置不该重叠）。
@@ -1356,6 +1363,15 @@ public class MainActivity extends AppCompatActivity {
         String childName = child != null && !child.getName().isEmpty()
                 ? child.displayName()
                 : (beacon != null ? beacon.getName() : "");
+
+        // 信标优先：多颗信标 → 括号里写这颗信标的名字
+        if (child != null && beacon != null) {
+            java.util.List<BeaconEntity> owned = dbHelper.getBeaconsByChild(child.getId());
+            if (owned != null && owned.size() > 1 && !beacon.getName().isEmpty()) {
+                return getString(R.string.arrive_typed_message, picker, childName,
+                        beacon.getName());
+            }
+        }
 
         java.util.Calendar cal = java.util.Calendar.getInstance();
         cal.setTime(now);

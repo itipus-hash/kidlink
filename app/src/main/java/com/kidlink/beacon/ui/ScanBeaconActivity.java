@@ -277,12 +277,41 @@ public class ScanBeaconActivity extends AppCompatActivity {
         if (id > 0) {
             // 归属交给调用方决定：管理页会把它认领到点「+」的那一组，
             // 首页则走 ensureChildren() 兜底。这里别抢着分配。
-            Feedback.show(this, getString(R.string.scan_beacon_saved, name));
-            setResult(RESULT_OK);
-            finish();
+            askNameThenFinish(beacon, id);
         } else {
             Feedback.show(this, R.string.import_fail);
         }
+    }
+
+    /**
+     * 存下来了，就地让用户起个名字。
+     *
+     * 不等回到列表再改：默认名（书包 / 未命名信标 5/6）本来就是临时占位，
+     * 回头得点进卡片、再点「自定义名称」改两遍。这里问一句，改完就走。
+     * 不想改就取消，默认名留着，不影响用。
+     *
+     * 输入框里什么提示都不写：标题已经说清是起名字，框里再堆一句
+     * 「现在是「书包」，起个名字吧，比如…」只是噪音，还挡着自己要打的字。
+     */
+    private void askNameThenFinish(BeaconEntity beacon, long id) {
+        beacon.setId(id);
+        com.kidlink.beacon.ui.widget.NameDialog.show(this,
+                getString(R.string.beacon_name_new_title),
+                "",
+                name -> {
+                    beacon.setName(name);
+                    dbHelper.updateBeacon(beacon);
+                    Feedback.show(this, getString(R.string.beacon_name_new_done, name));
+                    return true;
+                },
+                // 取消也要走人：信标已经存进来了，留在扫描页只会让人以为没保存
+                () -> {
+                    setResult(RESULT_OK);
+                    handler.postDelayed(this::finish, 260);
+                },
+                // 不给「取消」按钮：这颗已经存进去了，摆个取消容易让人以为取消 = 没保存。
+                // 想跳过就点弹窗外面，一样会退出。
+                false);
     }
 
     @Override

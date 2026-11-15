@@ -645,8 +645,9 @@
                 </LinearLayout>
             </LinearLayout>
 
-            <!-- 开源免费 / 自愿捐赠：常驻显示，不参与任何折叠 -->
+            <!-- 开源免费 / 自愿捐赠：任何一组设置展开时整块隐藏（含上面这条分隔线），全折叠时才露出来 -->
             <View
+                android:id="@+id/divider_donate"
                 android:layout_width="match_parent"
                 android:layout_height="1dp"
                 android:layout_marginStart="20dp"
@@ -714,6 +715,15 @@
                     android:text="@string/donate_repo"
                     android:textColor="@color/primary"
                     android:textSize="13sp" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:lineSpacingExtra="2dp"
+                    android:text="@string/donate_license"
+                    android:textColor="@color/text_secondary"
+                    android:textSize="12sp" />
             </LinearLayout>
 
         </LinearLayout>
