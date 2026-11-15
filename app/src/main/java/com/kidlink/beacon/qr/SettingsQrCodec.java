@@ -15,10 +15,12 @@ import java.nio.charset.StandardCharsets;
  * 格式：KIDLINK:cfg1:<Base64(JSON)>
  *
  * 打包的是设置页里除了「接娃人」以外的全部配置：
- * PushPlus 通道列表、推送冷却、接送成功推送距离、近距离推送距离、图标颜色超时时间、
+ * PushPlus 通道列表（不含开关状态）、推送冷却、接送成功推送距离、近距离推送距离、图标颜色超时时间、
  * 图标变色触发距离、震动时长、悬浮提醒触发距离。
  *
  * 接娃人是「这台手机的持有人」的身份，换机同步没意义，故意不带。
+ * 通道的开关也是：哪条通道在这台手机上开不开，是这台手机自己的选择，
+ * 同步过去会把对方关掉的通道又打开 —— 所以只带通道本身，不带开关。
  */
 public class SettingsQrCodec {
 
@@ -27,8 +29,9 @@ public class SettingsQrCodec {
     /**
      * 配置格式版本。字段增删都要 +1 —— 收到不同版本的码直接拒绝，
      * 免得把对方的设置按自己的理解硬塞进来。
+     * v8：推送通道不再带开关状态（开关是每台手机自己的事，同步过去会覆盖错）
      */
-    public static final int VERSION = 7;
+    public static final int VERSION = 8;
 
     private SettingsQrCodec() {}
 
@@ -81,7 +84,10 @@ public class SettingsQrCodec {
         return new JSONObject(new String(raw, StandardCharsets.UTF_8));
     }
 
-    /** 多条通道编成一个数组，二维码体积可控（每条大概 50 字节） */
+    /**
+     * 多条通道编成一个数组，二维码体积可控（每条大概 50 字节）。
+     * 只带名字和 token —— 开关状态不带，见类头注释。
+     */
     private static org.json.JSONArray encodeTokens(Context ctx) {
         org.json.JSONArray arr = new org.json.JSONArray();
         for (com.kidlink.beacon.data.PushToken t : BeaconPrefs.getPushTokens(ctx)) {
@@ -89,7 +95,6 @@ public class SettingsQrCodec {
                 org.json.JSONObject o = new org.json.JSONObject();
                 o.put("n", t.name);
                 o.put("t", t.token);
-                o.put("e", t.enabled ? 1 : 0);
                 arr.put(o);
             } catch (Exception ignored) {
             }
@@ -97,21 +102,41 @@ public class SettingsQrCodec {
         return arr;
     }
 
+    /**
+     * 把码里的通道写进本机。
+     *
+     * 按 token 认通道：本机已有的保留它自己的开关状态（码里没有这个信息，
+     * 也轮不到码来决定）；新出现的通道默认打开。所以扫一次码不会把对方
+     * 关掉的通道在本机也关掉，本机特意关掉的也不会被偷偷打开。
+     */
     private static void applyTokens(Context ctx, org.json.JSONArray arr) {
         if (arr == null) return;
+        java.util.List<com.kidlink.beacon.data.PushToken> local = BeaconPrefs.getPushTokens(ctx);
         java.util.List<com.kidlink.beacon.data.PushToken> list = new java.util.ArrayList<>();
         for (int i = 0; i < arr.length(); i++) {
             org.json.JSONObject o = arr.optJSONObject(i);
             if (o == null) continue;
-            com.kidlink.beacon.data.PushToken t = new com.kidlink.beacon.data.PushToken(
-                    o.optString("n", ""),
-                    o.optString("t", ""),
-                    o.optInt("e", 1) == 1);
-            if (!t.isValid()) continue;   // token 空白的直接丢掉，不留空壳
-            if (t.name.isEmpty()) t.name = "通道 " + (list.size() + 1);
-            list.add(t);
+            String token = o.optString("t", "").trim();
+            if (token.isEmpty()) continue;   // token 空白的直接丢掉，不留空壳
+            // 本机已有的通道：原样保留（含开关状态），码里的名字也不覆盖
+            com.kidlink.beacon.data.PushToken kept = findByToken(local, token);
+            if (kept != null) {
+                list.add(kept);
+                continue;
+            }
+            String name = o.optString("n", "").trim();
+            if (name.isEmpty()) name = "通道 " + (list.size() + 1);
+            list.add(new com.kidlink.beacon.data.PushToken(name, token, true));
         }
         BeaconPrefs.setPushTokens(ctx, list);
+    }
+
+    private static com.kidlink.beacon.data.PushToken findByToken(
+            java.util.List<com.kidlink.beacon.data.PushToken> list, String token) {
+        for (com.kidlink.beacon.data.PushToken t : list) {
+            if (t.token.equals(token)) return t;
+        }
+        return null;
     }
 
     /**

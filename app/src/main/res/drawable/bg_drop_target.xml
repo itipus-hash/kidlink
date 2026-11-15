@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  跨组拖信标时，目标分组头的悬停高亮：
+  一层淡淡的主色铺底，告诉用户「松手就会落到这个娃名下」。
+-->
+<shape xmlns:android="http://schemas.android.com/apk/res/android">
+    <solid android:color="#1F4CAF50" />
+    <corners android:radius="10dp" />
+</shape>

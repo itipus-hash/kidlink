@@ -52,7 +52,8 @@
     <string name="child_delete">删除</string>
     <string name="child_delete_title">删除「%s」？</string>
     <string name="child_deleted">已删除「%s」</string>
-    <string name="child_delete_last">只剩一个娃，删了信标就没人可挂了。\n要改名字请用「重命名」。</string>
+    <string name="child_delete_last_msg">名下的 %1$d 颗信标会一起删掉。</string>
+    <string name="child_delete_last_del">连信标一起删除</string>
     <string name="child_delete_msg">「%1$s」下面的 %2$d 颗信标不会被删除，\n会全部并到剩下的第一个娃下面。</string>
     <string name="child_delete_msg_empty">「%s」下面还没有信标，删掉不会影响其他数据。</string>
 
@@ -155,7 +156,7 @@
     <string name="settings_share_dialog_title">分享 / 接收配置</string>
     <string name="settings_share_title">分享配置</string>
     <string name="settings_share_name">接娃助手 · 全部设置</string>
-    <string name="settings_share_hint">用另一台手机的接娃助手 → 设置 → 右上角 → 接收配置，扫这个码即可同步。\n包含推送、距离、震动等全部设置，不含接娃人。</string>
+    <string name="settings_share_hint">用另一台手机的接娃助手 → 设置 → 右上角 → 接收配置，扫这个码即可同步。\n包含推送、距离、震动等全部设置，不含接娃人和通道开关。</string>
     <string name="settings_scan_title">接收配置</string>
     <string name="settings_import_ok">配置已导入</string>
     <string name="settings_qr_version_mismatch">版本不兼容（对方 v%1$d，本机 v%2$d）</string>
@@ -173,6 +174,7 @@
     <string name="share_bundle_partial">已收到 %1$s 页，继续扫描…</string>
     <string name="share_bundle_imported">导入 %1$d 颗信标</string>
     <string name="share_bundle_none">这套配置里的信标都已经有了</string>
+    <string name="beacon_moved_to">「%1$s」已移到「%2$s」</string>
     <string name="child_new_title">新建一个娃</string>
     <string name="child_add_hint">先建一个娃，信标才能归到 TA 名下</string>
     <string name="settings_push_group">消息推送设置</string>
@@ -238,6 +240,8 @@
     <string name="beacon_default_name">书包</string>
     <string name="scan_beacon_saved">已添加「%s」</string>
     <string name="scan_beacon_duplicate">该信标已添加过了</string>
+    <!-- 扫描列表里，已经在库里的信标名字后面挂这个后缀，并沉到未添加的下面 -->
+    <string name="scan_added_suffix">(已添加)</string>
     <string name="scan_state_with_count">正在扫描…  已收到 %d 台设备广播</string>
     <string name="raw_dump_title">原始广播</string>
     <string name="raw_dump_empty">还没有收到任何广播，先等两秒再打开</string>

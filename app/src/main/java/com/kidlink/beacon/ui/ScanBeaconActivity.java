@@ -49,6 +49,8 @@ public class ScanBeaconActivity extends AppCompatActivity {
     private TextView txtState;
     private TextView txtEmpty;
     private RecyclerView recyclerView;
+    /** 库里已存的信标快照：扫描列表里标记「(已添加)」并沉底 */
+    private List<BeaconEntity> savedList = new ArrayList<>();
 
     private final Map<String, ScanItem> found = new LinkedHashMap<>();
     /** 扫描期间见到的所有 BLE 设备（含原始 hex），用于诊断"为什么扫不到" */
@@ -174,6 +176,7 @@ public class ScanBeaconActivity extends AppCompatActivity {
             Feedback.show(this, R.string.bluetooth_need_on);
             return;
         }
+        refreshSavedList();
         found.clear();
         rawDevices.clear();
         adapter.setItems(new ArrayList<>());
@@ -224,7 +227,18 @@ public class ScanBeaconActivity extends AppCompatActivity {
 
     private void publishList() {
         List<ScanItem> list = new ArrayList<>(found.values());
-        Collections.sort(list, (a, b) -> Integer.compare(b.rssi, a.rssi));
+        // 先标记：库里有这颗的，名字换成库里存的 + (已添加)。
+        // 不用等用户点下去听那句「已添加过了」—— 列表自己就说清楚谁是谁。
+        for (ScanItem it : list) {
+            BeaconEntity b = findSaved(it);
+            it.saved = b != null;
+            it.savedName = b == null ? null : b.getName();
+        }
+        // 未添加的排上面（这才是这趟来要加的），已添加的沉下去，各自组内按信号强弱
+        Collections.sort(list, (a, b) -> {
+            if (a.saved != b.saved) return a.saved ? 1 : -1;
+            return Integer.compare(b.rssi, a.rssi);
+        });
         adapter.setItems(list);
         refreshStateText();
     }
@@ -255,7 +269,6 @@ public class ScanBeaconActivity extends AppCompatActivity {
             Feedback.show(this, R.string.scan_beacon_duplicate);
             return;
         }
-
         BeaconEntity beacon = new BeaconEntity();
         String name = item.name;
         if (name == null || name.trim().isEmpty()) {
@@ -277,10 +290,31 @@ public class ScanBeaconActivity extends AppCompatActivity {
         if (id > 0) {
             // 归属交给调用方决定：管理页会把它认领到点「+」的那一组，
             // 首页则走 ensureChildren() 兜底。这里别抢着分配。
+            refreshSavedList();   // 这颗从「未添加」变成「已添加」，列表跟着重排
             askNameThenFinish(beacon, id);
         } else {
             Feedback.show(this, R.string.import_fail);
         }
+    }
+
+    /** 库里已存的信标快照，扫描列表拿它标记「已添加」 */
+    private void refreshSavedList() {
+        savedList = dbHelper.getAllBeacons();
+    }
+
+    /**
+     * 这条广播是不是已经在库里。
+     * 匹配规则和首页一致：库里存了 MAC 的要求 MAC 一致（同品牌两台三件套可能一样），
+     * 没存 MAC 的老数据退回去只比 UUID + Major + Minor。
+     */
+    private BeaconEntity findSaved(ScanItem item) {
+        for (BeaconEntity b : savedList) {
+            if (b.getMajor() != item.major || b.getMinor() != item.minor) continue;
+            if (!com.kidlink.beacon.ble.IBeaconParser.uuidMatch(item.uuid, b.getUuidFormatted())) continue;
+            if (b.hasMac() && !item.mac.isEmpty() && !b.getMac().equals(item.mac)) continue;
+            return b;
+        }
+        return null;
     }
 
     /**
@@ -392,6 +426,9 @@ public class ScanBeaconActivity extends AppCompatActivity {
         final String mac;
         int rssi;
         String name;
+        /** 这条广播已经在库里：名字用库里存的，排序沉到未添加的下面 */
+        boolean saved;
+        String savedName;
 
         ScanItem(String uuid, int major, int minor, int txPower, String mac) {
             this.uuid = uuid;
@@ -442,9 +479,16 @@ public class ScanBeaconActivity extends AppCompatActivity {
 
             @SuppressLint("SetTextI18n")
             void bind(ScanItem item) {
-                txtName.setText(item.name != null && !item.name.isEmpty()
+                String name = item.name != null && !item.name.isEmpty()
                         ? item.name
-                        : getString(R.string.scan_beacon_unknown, item.major, item.minor));
+                        : getString(R.string.scan_beacon_unknown, item.major, item.minor);
+                // 库里已经有这颗：名字用库里的（那才是我们保存的名字），后面挂个「(已添加)」
+                if (item.saved && item.savedName != null) {
+                    name = item.savedName + getString(R.string.scan_added_suffix);
+                }
+                txtName.setText(name);
+                txtName.setTextColor(ContextCompat.getColor(ScanBeaconActivity.this,
+                        item.saved ? R.color.text_secondary : R.color.text_primary));
 
                 String uuid = item.uuid.length() == 32
                         ? item.uuid.substring(0, 8) + "…" + item.uuid.substring(28)

@@ -70,9 +70,11 @@ import java.util.Map;
  * - 网格最后一格永远是「+ 添加」，点了扫进来的信标**直接归这一组**
  * - 卡片点一下进信标信息（所属娃 / 场景标签 / 清冷却 / 删除都在里面）
  * - 按住卡片上下滑 = 组内拖动排序
+ * - 拖出本组、悬到别的娃头上（分组头会亮一下）= 松手直接移到那个娃名下
+ * - 有两个以上娃时，拖动一开始其他组自动收成一行分组头，落点一屏摆开，松手恢复
  *
- * 跨组移动不做拖拽：把一个娃的卡片拖到另一个娃那里，和组内排序的手势太容易冲突，
- * 而且跨组移动是低频操作 —— 进信息页选「所属娃」更明确。
+ * 跨组移动优先做成了拖拽：比进信息页选「所属娃」直观。拖动期间手指压在
+ * 哪个分组头上，那个分组头就高亮提示；只在松手那一刻落库，中途不交换。
  */
 public class BeaconManagerActivity extends AppCompatActivity {
 
@@ -140,6 +142,8 @@ public class BeaconManagerActivity extends AppCompatActivity {
     private final Map<Long, Live> liveById = new HashMap<>();
     /** 当前页面上的所有分组 Adapter，刷新状态时逐个通知 */
     private final List<BeaconAdapter> adapters = new ArrayList<>();
+    /** 跨组拖动时被高亮的「落点」分组下标，-1 = 没有悬在别的组上 */
+    private int dropHoverIndex = -1;
 
     private final Handler handler = new Handler(Looper.getMainLooper());
     /**
@@ -222,11 +226,11 @@ public class BeaconManagerActivity extends AppCompatActivity {
 
         MaterialToolbar toolbar = findViewById(R.id.toolbar);
         toolbar.setNavigationOnClickListener(v -> finish());
-        // 右上角「分享」：整套娃 + 信标打成一张（或几页）二维码，换手机不用一颗颗扫
+        // 右上角「分享」：和设置页一样先问一句 —— 是把配置分享出去，还是扫码接收
         toolbar.inflateMenu(R.menu.menu_beacon_manager);
         toolbar.setOnMenuItemClickListener(item -> {
             if (item.getItemId() == R.id.action_share_all) {
-                shareAllConfig();
+                showManagerShareDialog();
                 return true;
             }
             return false;
@@ -502,6 +506,36 @@ public class BeaconManagerActivity extends AppCompatActivity {
         refreshLiveCards();
     }
 
+    /** 右上角分享：先选「分享配置」还是「接收配置」，和设置页的手感保持一致 */
+    private void showManagerShareDialog() {
+        new MaterialAlertDialogBuilder(this)
+                .setTitle(R.string.settings_share_dialog_title)
+                .setItems(new CharSequence[]{
+                        getString(R.string.settings_share_action),
+                        getString(R.string.settings_receive_action)
+                }, (d, which) -> {
+                    if (which == 0) shareAllConfig();
+                    else receiveBundleConfig();
+                })
+                .setNegativeButton(R.string.cancel, null)
+                .show();
+    }
+
+    /**
+     * 扫对方的整套配置码（娃 + 时间段 + 信标分组），攒齐了自动导入。
+     * 导入完成 QRScanActivity 会 setResult(RESULT_OK) 并 finish，
+     * 回到这一页时 onResume 里的 reload() 自然把新数据画出来，不用额外的回调。
+     */
+    private void receiveBundleConfig() {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
+                != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions();
+            tip(getString(R.string.perm_camera));
+            return;
+        }
+        startActivity(new Intent(this, QRScanActivity.class));
+    }
+
     /**
      * 分享整套配置：娃 + 全部信标打成二维码。
      *
@@ -544,6 +578,8 @@ public class BeaconManagerActivity extends AppCompatActivity {
 
         BeaconAdapter adapter = new BeaconAdapter(child, rv);
         adapter.setData(beacons);
+        adapter.header = header;
+        adapter.chevron = chevron;
         rv.setAdapter(adapter);
         adapters.add(adapter);
         rv.setVisibility(collapsed ? View.GONE : View.VISIBLE);
@@ -551,6 +587,7 @@ public class BeaconManagerActivity extends AppCompatActivity {
         // 时间段放在信标之前：先定「这个娃的作息」，再往下才是「挂了哪几颗信标」
         final View timeRow = buildTimeGroupRow(child);
         timeRow.setVisibility(collapsed ? View.GONE : View.VISIBLE);
+        adapter.timeRow = timeRow;
 
         header.setOnClickListener(v -> {
             boolean nowCollapsed = !BeaconPrefs.isChildCollapsed(this, child.getId());
@@ -731,15 +768,28 @@ public class BeaconManagerActivity extends AppCompatActivity {
 
     /**
      * 删娃。删的是分组，不是信标 —— 名下的信标会并到剩下的第一个娃下面。
-     * 所以「只剩一个娃且名下有信标」时不允许删：否则信标没地方可去，
-     * 下次 ensureChildren() 又会拿第一颗信标名建一个出来，等于白删。
+     *
+     * 「只剩一个娃且名下有信标」时问一声再删：删了分组信标就没地方挂了，
+     * 所以确认后是连信标一起删，防止手滑把信标也带走。
      */
     private void confirmDeleteChild(ChildEntity child) {
         List<ChildEntity> children = dbHelper.getAllChildren();
         List<BeaconEntity> owned = dbHelper.getBeaconsByChild(child.getId());
 
         if (children.size() <= 1 && !owned.isEmpty()) {
-            tipLong(getString(R.string.child_delete_last));
+            // 只剩这一个娃：删了分组信标就没地方挂了，所以连信标一起删
+            new MaterialAlertDialogBuilder(this)
+                    .setTitle(getString(R.string.child_delete_title, child.displayName()))
+                    .setMessage(getString(R.string.child_delete_last_msg, owned.size()))
+                    .setNegativeButton(R.string.cancel, null)
+                    .setPositiveButton(R.string.child_delete_last_del, (d, w) -> {
+                        for (BeaconEntity b : owned) dbHelper.deleteBeacon(b.getId());
+                        BeaconPrefs.clearTimeGroupsFor(this, child.getId());
+                        dbHelper.deleteChild(child.getId());
+                        reload();
+                        tip(getString(R.string.child_deleted, child.displayName()));
+                    })
+                    .show();
             return;
         }
 
@@ -759,6 +809,98 @@ public class BeaconManagerActivity extends AppCompatActivity {
                     tip(getString(R.string.child_deleted, child.displayName()));
                 })
                 .show();
+    }
+
+    // === 跨组拖动 ===
+
+    /**
+     * 手指下面压着哪个分组（不是自己那组才算）。
+     *
+     * 判定范围 = 分组头顶边 → 网格底边：手指滑过分组头、时间段那一行也算落点，
+     * 不用非得压到信标格子上。折叠的组网格是 GONE 的，就只剩分组头那一小条，
+     * 拖到头上松手同样能移进去。
+     */
+    private int findGroupUnder(BeaconAdapter self, float rawY) {
+        for (int i = 0; i < adapters.size(); i++) {
+            BeaconAdapter a = adapters.get(i);
+            if (a == self || a.header == null) continue;
+            int[] loc = new int[2];
+            a.header.getLocationOnScreen(loc);
+            int top = loc[1];
+            int bottom = top + a.header.getHeight();
+            if (a.recyclerView.getVisibility() == View.VISIBLE) {
+                a.recyclerView.getLocationOnScreen(loc);
+                bottom = loc[1] + a.recyclerView.getHeight();
+            }
+            if (rawY >= top && rawY < bottom) return i;
+        }
+        return -1;
+    }
+
+    /** 悬停落点高亮：把目标分组头铺一层淡淡的主色，挪走或松手时还原 */
+    private void setDropHover(int index) {
+        if (index == dropHoverIndex) return;
+        if (dropHoverIndex >= 0 && dropHoverIndex < adapters.size()
+                && adapters.get(dropHoverIndex).header != null) {
+            android.util.TypedValue ripple = new android.util.TypedValue();
+            getTheme().resolveAttribute(android.R.attr.selectableItemBackground, ripple, true);
+            adapters.get(dropHoverIndex).header.setBackgroundResource(ripple.resourceId);
+        }
+        dropHoverIndex = index;
+        if (index >= 0 && index < adapters.size() && adapters.get(index).header != null) {
+            adapters.get(index).header.setBackgroundResource(R.drawable.bg_drop_target);
+        }
+    }
+
+    /**
+     * 跨组移动：从 src 组摘出来，挂到 dst 组末尾，两边的顺序一起落库。
+     * 移完整页 reload —— 分组头的数量、实时状态的绑定都要跟着重建。
+     */
+    private void moveBeaconCrossGroup(BeaconAdapter src, int index, int dstIndex) {
+        if (index < 0 || index >= src.items.size() || dstIndex < 0
+                || dstIndex >= adapters.size()) return;
+        BeaconAdapter dst = adapters.get(dstIndex);
+        BeaconEntity b = src.items.get(index);
+        src.items.remove(index);
+        src.notifyItemRemoved(index);
+        dst.items.add(b);
+        dst.notifyItemInserted(dst.items.size() - 1);
+
+        dbHelper.setBeaconChild(b.getId(), dst.child.getId());
+        dbHelper.updateSortOrders(src.items);
+        dbHelper.updateSortOrders(dst.items);
+        tip(getString(R.string.beacon_moved_to, b.getName(), dst.child.displayName()));
+        reload();
+    }
+
+    /**
+     * 拖动开始时把**其他组**临时折叠成只剩分组头。
+     *
+     * 自己那组必须保持展开：被拖的卡片还住在里面，网格一收卡片就凭空消失。
+     * 其他组收起来之后，所有落点（分组头）整整齐齐摞在一屏里，
+     * 拖到哪儿都看得清。只改可见性，不写折叠偏好 —— 松手时按偏好恢复。
+     */
+    private void collapseForDrag(BeaconAdapter self) {
+        for (BeaconAdapter a : adapters) {
+            if (a == self || a.header == null) continue;
+            a.recyclerView.setVisibility(View.GONE);
+            if (a.timeRow != null) a.timeRow.setVisibility(View.GONE);
+            if (a.chevron != null) a.chevron.setText(R.string.chevron_collapsed);
+        }
+    }
+
+    /** 拖动结束 / 取消：按每个人的折叠偏好把分组恢复原样 */
+    private void restoreAfterDrag() {
+        for (BeaconAdapter a : adapters) {
+            if (a.header == null) continue;
+            boolean collapsed = BeaconPrefs.isChildCollapsed(this, a.child.getId());
+            a.recyclerView.setVisibility(collapsed ? View.GONE : View.VISIBLE);
+            if (a.timeRow != null) a.timeRow.setVisibility(collapsed ? View.GONE : View.VISIBLE);
+            if (a.chevron != null) {
+                a.chevron.setText(collapsed
+                        ? R.string.chevron_collapsed : R.string.chevron_expanded);
+            }
+        }
     }
 
     // === 归属 ===
@@ -1085,6 +1227,12 @@ public class BeaconManagerActivity extends AppCompatActivity {
         private final RecyclerView recyclerView;
         /** 此刻绑在屏幕上的卡片：beaconId → ViewHolder */
         final Map<Long, BeaconVH> bound = new HashMap<>();
+        /** 这一组的分组头：跨组拖动时用它做落点判定和悬停高亮 */
+        View header;
+        /** 分组头上的箭头：拖动期间临时折叠/恢复时要跟着翻 */
+        TextView chevron;
+        /** 分组头和网格之间的「时间段」那一行：临时折叠时一起收 */
+        View timeRow;
 
         BeaconAdapter(ChildEntity child, RecyclerView recyclerView) {
             this.child = child;
@@ -1170,6 +1318,8 @@ public class BeaconManagerActivity extends AppCompatActivity {
             float grabDx, grabDy;
             boolean moved, longHoldFired;
             int dragIndex = -1;
+            /** 拖动期间悬在哪个别的分组上（adapters 下标），-1 = 还在自己组里 */
+            int hoverGroup = -1;
             Runnable pendingHold;
             /** 拖动期间临时摘掉的条目动画，松手后还回去 */
             RecyclerView.ItemAnimator savedAnimator;
@@ -1268,7 +1418,8 @@ public class BeaconManagerActivity extends AppCompatActivity {
 
             /**
              * 按下即滑就拖：
-             * 点按 → 信息页；滑动超过 touchSlop → 组内换位；按住 500ms 不动 → 也是信息页
+             * 点按 → 信息页；滑动超过 touchSlop → 组内换位；
+             * 拖到别的分组头上 → 高亮提示，松手移过去；按住 500ms 不动 → 也是信息页
              */
             @SuppressLint("ClickableViewAccessibility")
             private void attachGestures() {
@@ -1320,6 +1471,31 @@ public class BeaconManagerActivity extends AppCompatActivity {
                                 itemView.setTranslationZ(dp(12));
                                 itemView.setScaleX(1.02f);
                                 itemView.setScaleY(1.02f);
+
+                                // 有两个以上娃（存在换组的可能）就在拖动开始的这一刻
+                                // 把其他组临时折叠成只剩分组头：落点一屏摆开，往哪儿放一目了然。
+                                // 只收可见性不写偏好，松手按原样恢复。
+                                if (adapters.size() >= 2) {
+                                    final int[] keepSelf = new int[2];
+                                    itemView.getLocationOnScreen(keepSelf);
+                                    collapseForDrag(BeaconAdapter.this);
+                                    // 折叠会让本组在页面上挪位置，布局回调里把视觉位置补回来
+                                    itemView.addOnLayoutChangeListener(
+                                            new View.OnLayoutChangeListener() {
+                                        @Override
+                                        public void onLayoutChange(View v2, int l, int t,
+                                                                   int r, int b,
+                                                                   int ol, int ot, int orr, int ob) {
+                                            itemView.removeOnLayoutChangeListener(this);
+                                            int[] after = new int[2];
+                                            itemView.getLocationOnScreen(after);
+                                            itemView.setTranslationX(itemView.getTranslationX()
+                                                    + keepSelf[0] - after[0]);
+                                            itemView.setTranslationY(itemView.getTranslationY()
+                                                    + keepSelf[1] - after[1]);
+                                        }
+                                    });
+                                }
                             }
 
                             if (moved && dragIndex >= 0 && dragIndex < items.size()) {
@@ -1332,8 +1508,14 @@ public class BeaconManagerActivity extends AppCompatActivity {
                                 itemView.setTranslationX(ev.getRawX() - grabDx - baseX);
                                 itemView.setTranslationY(ev.getRawY() - grabDy - baseY);
 
-                                int target = findTargetUnder(ev.getRawX(), ev.getRawY());
-                                if (target >= 0 && target != dragIndex) {
+                                // 先看手指是不是滑出了本组、压到别的分组头上：
+                                // 压住了就高亮那个组，组内换位暂停 —— 两种手势别混
+                                hoverGroup = findGroupUnder(BeaconAdapter.this, ev.getRawY());
+                                setDropHover(hoverGroup);
+
+                                if (hoverGroup < 0) {
+                                    int target = findTargetUnder(ev.getRawX(), ev.getRawY());
+                                    if (target >= 0 && target != dragIndex) {
                                     // 交换前记下卡片的屏幕位置；换位后布局会把它挪走，
                                     // 在布局回调里把 translation 补回来，视觉上就不会闪一下
                                     final int[] keep = new int[2];
@@ -1356,6 +1538,7 @@ public class BeaconManagerActivity extends AppCompatActivity {
                                             }
                                         });
                                     }
+                                    }
                                 }
                             }
                             return true;
@@ -1364,9 +1547,31 @@ public class BeaconManagerActivity extends AppCompatActivity {
                         case MotionEvent.ACTION_CANCEL: {
                             cancelPendingHold();
                             boolean wasDragging = moved && dragIndex >= 0;
+                            final int hover = hoverGroup;
+                            hoverGroup = -1;
+                            setDropHover(-1);
 
-                            if (wasDragging) {
+                            if (wasDragging && hover >= 0
+                                    && ev.getActionMasked() == MotionEvent.ACTION_UP) {
+                                // 松手在别的分组头上 → 跨组移动。整页 reload 会重建
+                                // 布局，这张卡片跟着旧视图一起被摘掉，不用做回弹动画
+                                int index = dragIndex;
                                 dragIndex = -1;
+                                itemView.setTranslationZ(0f);
+                                if (v.getParent() != null) {
+                                    v.getParent().requestDisallowInterceptTouchEvent(false);
+                                }
+                                handler.postDelayed(() -> {
+                                    if (savedAnimator != null) {
+                                        recyclerView.setItemAnimator(savedAnimator);
+                                        savedAnimator = null;
+                                    }
+                                }, 170);
+                                moveBeaconCrossGroup(BeaconAdapter.this, index, hover);
+                            } else if (wasDragging) {
+                                dragIndex = -1;
+                                // 拖动结束：先把临时折叠的组恢复原样，卡片再滑回落位
+                                restoreAfterDrag();
                                 // 松手：从当前位置滑到格子的自然位置（translation 归零即落位）
                                 itemView.animate()
                                         .translationX(0f)
