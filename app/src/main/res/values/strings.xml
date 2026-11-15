@@ -6,7 +6,8 @@
     <string name="add_beacon">添加信标</string>
     <string name="manage_beacons">信标管理</string>
     <string name="no_beacon_tip">还没有添加蓝牙信标，点右上角图标添加一个</string>
-    <string name="no_beacon_selected">还没有添加信标\n点右上角图标进入信标管理</string>
+    <string name="no_beacon_selected">还没有添加信标\n手机靠近信标才能看到距离</string>
+    <string name="main_empty_add">＋ 添加信标</string>
     <!-- 首页：按娃显示时，一个娃名下有多颗信标才显示这行小字 -->
     <string name="main_current_beacon">当前：%s</string>
 
@@ -33,6 +34,7 @@ Eddystone（Google 的另一套格式）和普通蓝牙设备做不到这点：
     <string name="beacon_manager_hint">按娃分组。点分组头折叠 / 长按改名，点卡片看信息，按住卡片滑动可排序</string>
     <string name="add_beacon_hint">扫描或扫码</string>
     <string name="add_to_child">归到%s</string>
+    <string name="beacon_empty_add_hint">扫描附近信标，或用二维码导入</string>
     <string name="add_by_ble">蓝牙扫描附近信标</string>
     <string name="add_by_qr">扫描二维码导入</string>
     <string name="drag_to_sort">拖动排序</string>
@@ -154,6 +156,20 @@ Eddystone（Google 的另一套格式）和普通蓝牙设备做不到这点：
     <string name="settings_qr_version_mismatch">版本不兼容（对方 v%1$d，本机 v%2$d）</string>
     <string name="settings_qr_invalid">不是接娃助手的配置码</string>
     <string name="qr_generate_failed">二维码生成失败</string>
+
+    <!-- 信标管理页 · 分享整套配置 -->
+    <string name="beacon_share_all">分享配置</string>
+    <string name="share_config_title">分享配置</string>
+    <string name="share_config_name">接娃助手 · 全部娃与信标</string>
+    <string name="share_config_hint">用另一台手机的接娃助手 → 信标管理 → 右上角 → 添加信标 → 扫描二维码导入，扫这一个码就能带走全部娃和信标。</string>
+    <string name="share_config_hint_paged">这套配置一屏放不下，已切成 %1$d 页自动轮播。让对方对着屏幕连续扫几秒，几页都扫到才算导完；中途移开会只收到一半。</string>
+    <string name="share_config_page">第 %1$d / %2$d 页 · 自动轮播</string>
+    <string name="share_config_empty">还没有可分享的信标</string>
+    <string name="share_bundle_partial">已收到 %1$s 页，继续扫描…</string>
+    <string name="share_bundle_imported">导入 %1$d 颗信标</string>
+    <string name="share_bundle_none">这套配置里的信标都已经有了</string>
+    <string name="child_new_title">新建一个娃</string>
+    <string name="child_add_hint">先建一个娃，信标才能归到 TA 名下</string>
     <string name="settings_push_group">消息推送设置</string>
     <string name="near_group">界面提醒设置</string>
     <string name="system_group">系统设置</string>

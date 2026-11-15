@@ -29,6 +29,7 @@ import com.kidlink.beacon.R;
 import com.kidlink.beacon.data.BeaconDbHelper;
 import com.kidlink.beacon.data.BeaconEntity;
 import com.kidlink.beacon.qr.BeaconQrCodec;
+import com.kidlink.beacon.qr.ConfigBundleCodec;
 import com.kidlink.beacon.qr.SettingsQrCodec;
 
 import java.util.concurrent.ExecutorService;
@@ -194,6 +195,38 @@ public class QRScanActivity extends AppCompatActivity {
             return;
         }
 
+        // 模式 B0：整套配置（娃 + 全部信标）。
+        // 多页时每几百毫秒才换一页，所以收到一页**不能报错也不能退出**，
+        // 攒在 ConfigBundleCodec 里，攒齐了再一次性导入。
+        if (ConfigBundleCodec.isFrame(rawValue)) {
+            String assembled = ConfigBundleCodec.collect(rawValue);
+            if (assembled == null) {
+                final String progress = ConfigBundleCodec.progress(rawValue);
+                runOnUiThread(() -> Feedback.show(this,
+                        getString(R.string.share_bundle_partial, progress == null ? "" : progress), true));
+                return;   // scanned 保持 false，相机继续扫下一帧
+            }
+            BeaconDbHelper bundleDb = new BeaconDbHelper(this);
+            int inserted = ConfigBundleCodec.importInto(bundleDb, assembled);
+            if (inserted < 0) {
+                runOnUiThread(() -> {
+                    Feedback.show(this, R.string.import_fail);
+                    scanned = false;
+                });
+                return;
+            }
+            scanned = true;
+            final int count = inserted;
+            runOnUiThread(() -> {
+                Feedback.show(this, count > 0
+                        ? getString(R.string.share_bundle_imported, count)
+                        : getString(R.string.share_bundle_none), true);
+                setResult(RESULT_OK);
+                finish();
+            });
+            return;
+        }
+
         // 模式 B：扫码导入新信标 —— 这个才需要是本 APP 的格式
         if (!BeaconQrCodec.isValidFormat(rawValue)) {
             runOnUiThread(() -> Feedback.show(this, R.string.invalid_qr));
@@ -261,6 +294,8 @@ public class QRScanActivity extends AppCompatActivity {
     @Override
     protected void onDestroy() {
         super.onDestroy();
+        // 半截的多页配置不留在内存里，下次进来从头扫
+        ConfigBundleCodec.reset();
         if (cameraExecutor != null) {
             cameraExecutor.shutdown();
         }

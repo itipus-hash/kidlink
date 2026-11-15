@@ -54,7 +54,52 @@
                 android:orientation="vertical"
                 android:paddingTop="4dp" />
 
-            <!-- 新建娃：只在已经有娃的时候出现（一颗信标都没有时，娃是自动建的） -->
+            <!-- 还没有娃时的整块大入口：「新建一个娃」。
+                 有娃之后这块收起 —— 每个分组里自带一格「+ 添加信标」，
+                 没有分组时信标无处安放，所以这时候不该出现「添加信标」 -->
+            <LinearLayout
+                android:id="@+id/layout_empty_add"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="16dp"
+                android:layout_marginEnd="16dp"
+                android:layout_marginTop="10dp"
+                android:background="@drawable/bg_tile_add"
+                android:clickable="true"
+                android:focusable="true"
+                android:gravity="center"
+                android:orientation="vertical"
+                android:paddingTop="30dp"
+                android:paddingBottom="30dp"
+                android:visibility="gone">
+
+                <ImageView
+                    android:layout_width="36dp"
+                    android:layout_height="36dp"
+                    android:contentDescription="@string/child_new_title"
+                    android:src="@drawable/ic_plus" />
+
+                <TextView
+                    android:id="@+id/txt_empty_title"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:text="@string/child_new_title"
+                    android:textColor="@color/primary"
+                    android:textSize="16sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/txt_empty_hint"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:text="@string/child_add_hint"
+                    android:textColor="@color/text_secondary"
+                    android:textSize="12sp" />
+            </LinearLayout>
+
+            <!-- 新建娃：已经有娃的时候走这里（一颗信标都没有时，上面那块就是新建娃） -->
             <TextView
                 android:id="@+id/btn_new_child"
                 android:layout_width="match_parent"

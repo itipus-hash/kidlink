@@ -36,6 +36,7 @@ import com.kidlink.beacon.data.BeaconDbHelper;
 import com.kidlink.beacon.data.BeaconEntity;
 import com.kidlink.beacon.data.BeaconPrefs;
 import com.kidlink.beacon.data.ChildEntity;
+import com.kidlink.beacon.qr.ConfigBundleCodec;
 import com.kidlink.beacon.ui.widget.Feedback;
 
 import java.util.ArrayList;
@@ -90,6 +91,8 @@ public class BeaconManagerActivity extends AppCompatActivity {
     private View btnNewChild;
     /** 空状态里的购买建议整块（有信标就隐藏） */
     private View layoutBuyTip;
+    /** 还没有娃时的整块入口：新建一个娃 */
+    private View layoutEmptyAdd;
     /** children.id → 娃名 */
     private final Map<Long, String> childNames = new HashMap<>();
     /** 当前打开的信标信息弹窗 —— 点「所属娃 / 场景标签」前要先关掉，免得弹窗叠弹窗 */
@@ -126,11 +129,23 @@ public class BeaconManagerActivity extends AppCompatActivity {
 
         MaterialToolbar toolbar = findViewById(R.id.toolbar);
         toolbar.setNavigationOnClickListener(v -> finish());
+        // 右上角「分享」：整套娃 + 信标打成一张（或几页）二维码，换手机不用一颗颗扫
+        toolbar.inflateMenu(R.menu.menu_beacon_manager);
+        toolbar.setOnMenuItemClickListener(item -> {
+            if (item.getItemId() == R.id.action_share_all) {
+                shareAllConfig();
+                return true;
+            }
+            return false;
+        });
 
         layoutGroups = findViewById(R.id.layout_groups);
         scrollGroups = findViewById(R.id.scroll_groups);
         btnNewChild = findViewById(R.id.btn_new_child);
         btnNewChild.setOnClickListener(v -> askNewChild(null));
+        layoutEmptyAdd = findViewById(R.id.layout_empty_add);
+        // 这块只在「一个娃都没有」时出现，点了就是建娃
+        layoutEmptyAdd.setOnClickListener(v -> askNewChild(null));
 
         // 空状态里的购买建议：整块可点去淘宝，内层那行单独可点看协议说明
         layoutBuyTip = findViewById(R.id.layout_buy_tip);
@@ -191,7 +206,7 @@ public class BeaconManagerActivity extends AppCompatActivity {
         layoutGroups.removeAllViews();
 
         if (children.isEmpty()) {
-            // 一颗信标都没有：没有分组可显示，只留购买建议
+            // 一颗信标都没有：没有分组可显示，只留「添加信标」那一个大入口
             layoutGroups.setVisibility(View.GONE);
         } else {
             layoutGroups.setVisibility(View.VISIBLE);
@@ -200,14 +215,35 @@ public class BeaconManagerActivity extends AppCompatActivity {
             }
         }
 
-        // 「新建一个娃」只在一个娃都没有之外的场景有意义：
-        // 没有信标时娃是自动建的，先建空娃什么也做不了
-        btnNewChild.setVisibility(children.isEmpty() ? View.GONE : View.VISIBLE);
+        // 一个娃都没有时整页只剩这一块能点：「新建一个娃」。
+        // 有娃之后这块就收起来 —— 每个分组里已经有一格「+ 添加信标」，
+        // 再摆一个大块只是重复，而且会让人以为「加信标」和「加进这组」是两件事。
+        final boolean noChild = children.isEmpty();
+        layoutEmptyAdd.setVisibility(noChild ? View.VISIBLE : View.GONE);
+        // 已经有娃了才在底部再给一个「新建一个娃」；没有娃时上面那块就是它，别重复
+        btnNewChild.setVisibility(noChild ? View.GONE : View.VISIBLE);
         layoutBuyTip.setVisibility(all.isEmpty() ? View.VISIBLE : View.GONE);
 
         if (scrollGroups != null) {
             scrollGroups.post(() -> scrollGroups.scrollTo(0, scrollY));
         }
+    }
+
+    /**
+     * 分享整套配置：娃 + 全部信标打成二维码。
+     *
+     * 一页装得下就是一张静态码；装不下就切成几页，交给展示页自动轮播成动态码。
+     * 换手机、给家里人配一台，扫一遍就全过去了，不用一颗颗扫。
+     */
+    private void shareAllConfig() {
+        List<String> frames = ConfigBundleCodec.encode(dbHelper);
+        if (frames.isEmpty()) {
+            Feedback.show(this, R.string.share_config_empty);
+            return;
+        }
+        Intent it = new Intent(this, QRShareActivity.class);
+        it.putStringArrayListExtra("qr_frames", new ArrayList<>(frames));
+        startActivity(it);
     }
 
     /** 拼一个娃的分组：分组头 + 两列网格（最后一格是「+ 添加」） */

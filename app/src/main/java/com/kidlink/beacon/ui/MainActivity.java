@@ -21,6 +21,7 @@ import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.content.ContextCompat;
 
 import com.google.android.material.appbar.MaterialToolbar;
+import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import com.kidlink.beacon.R;
 import com.kidlink.beacon.ble.BeaconScanner;
 import com.kidlink.beacon.ble.IBeaconData;
@@ -122,6 +123,8 @@ public class MainActivity extends AppCompatActivity {
         TextView rssi;
         TextView state;
         View rowSignal;
+        /** 空状态才显示的那个「添加信标」按钮（只有第一块有） */
+        View btnAdd;
 
         ChildEntity child;
         /** 这个娃名下的全部信标 */
@@ -169,6 +172,16 @@ public class MainActivity extends AppCompatActivity {
     private final ActivityResultLauncher<Intent> managerLauncher =
             registerForActivityResult(new ActivityResultContracts.StartActivityForResult(), result -> {
                 // 返回后重新加载（可能在管理页被改名/删除/改选择）
+                loadCurrentBeacons();
+                if (!currentBeacons.isEmpty()) startScanForCurrent();
+            });
+
+    /**
+     * 首页直接添加信标（空状态专用）。
+     * 加完要重新加载 —— 新信标会带出一个娃，首页才有面板可显示。
+     */
+    private final ActivityResultLauncher<Intent> addLauncher =
+            registerForActivityResult(new ActivityResultContracts.StartActivityForResult(), result -> {
                 loadCurrentBeacons();
                 if (!currentBeacons.isEmpty()) startScanForCurrent();
             });
@@ -331,7 +344,53 @@ public class MainActivity extends AppCompatActivity {
         p.rowSignal = findViewById(signalId);
         p.rssi = findViewById(rssiId);
         p.state = findViewById(stateId);
+        // 只有第一块布局里有这个按钮，另外两块查不到就是 null
+        p.btnAdd = p.container.findViewById(R.id.btn_empty_add);
         panels[index] = p;
+    }
+
+    // === 空状态：引导直接添加 ===
+
+    /**
+     * 「一个信标都没有」时点中间那块（或那颗按钮）走这里。
+     *
+     * 以前是直接跳信标管理页 —— 但管理页也是空的，用户到了那边还得再找入口，
+     * 等于白跑一趟。空库时用户想干的事只有一件：把信标加进来。
+     * 所以这里直接给「扫描 / 扫码」两条路，添加完返回首页立刻就有面板了。
+     */
+    private void showAddOptions() {
+        new MaterialAlertDialogBuilder(this)
+                .setTitle(R.string.add_beacon)
+                .setItems(new CharSequence[]{
+                        getString(R.string.add_by_ble),
+                        getString(R.string.add_by_qr)
+                }, (dialog, which) -> {
+                    // 两个页面自己会申请权限，这里不用先拦
+                    addLauncher.launch(new Intent(this, which == 0
+                            ? ScanBeaconActivity.class : QRScanActivity.class));
+                })
+                .setNegativeButton(R.string.cancel, null)
+                .show();
+    }
+
+    /**
+     * 空状态才让中间那块可点、并显示那颗按钮。
+     * 有信标之后必须收回点击 —— 否则滑动/误触会莫名弹出添加框。
+     */
+    private void setEmptyTap(boolean on) {
+        for (Panel p : panels) {
+            if (p.btnAdd != null) {
+                p.btnAdd.setVisibility(on ? View.VISIBLE : View.GONE);
+                p.btnAdd.setOnClickListener(on ? v -> showAddOptions() : null);
+            }
+        }
+        Panel first = panels[0];
+        if (first == null) return;
+        if (on) {
+            first.container.setOnClickListener(v -> showAddOptions());
+        } else {
+            first.container.setOnClickListener(null);
+        }
     }
 
     /**
@@ -497,6 +556,7 @@ public class MainActivity extends AppCompatActivity {
                 currentChildren.clear();
                 renderNoBeacon(panels[0]);
             }
+            setEmptyTap(shownChildren.isEmpty());
             return;
         }
 
@@ -534,6 +594,7 @@ public class MainActivity extends AppCompatActivity {
                 if (p.child != null) renderSearching(p);
             }
         }
+        setEmptyTap(currentChildren.isEmpty());
     }
 
     /** 把新的信标列表同步进 panel（只换内容，不换 panel 对象） */
