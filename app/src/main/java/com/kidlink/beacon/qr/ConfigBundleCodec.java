@@ -1,11 +1,14 @@
 package com.kidlink.beacon.qr;
 
+import android.content.Context;
 import android.util.Base64;
 import android.util.Log;
 
 import com.kidlink.beacon.data.BeaconDbHelper;
 import com.kidlink.beacon.data.BeaconEntity;
+import com.kidlink.beacon.data.BeaconPrefs;
 import com.kidlink.beacon.data.ChildEntity;
+import com.kidlink.beacon.data.TimeGroup;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -47,8 +50,11 @@ public final class ConfigBundleCodec {
     /** 分页码的固定前缀，扫码端靠它认「这是整套配置」 */
     public static final String PREFIX = "KIDLINK:b1:";
 
-    /** 载荷格式版本。字段增删都要 +1，扫码端对不上就整包拒收 */
-    public static final int VERSION = 1;
+    /**
+     * 载荷格式版本。字段增删都要 +1，扫码端对不上就整包拒收。
+     * v2：娃从「纯名字字符串」变成对象，带上这个娃的时间段；信标不再带场景标签
+     */
+    public static final int VERSION = 2;
 
     /**
      * 一页装多少字符。
@@ -69,7 +75,7 @@ public final class ConfigBundleCodec {
      *
      * @return 至少一页；库里一颗信标都没有时返回空列表
      */
-    public static List<String> encode(BeaconDbHelper db) {
+    public static List<String> encode(Context ctx, BeaconDbHelper db) {
         List<String> frames = new ArrayList<>();
         List<BeaconEntity> beacons = db.getAllBeacons();
         if (beacons == null || beacons.isEmpty()) return frames;
@@ -80,7 +86,21 @@ public final class ConfigBundleCodec {
             root.put("v", VERSION);
 
             JSONArray childArr = new JSONArray();
-            for (ChildEntity c : children) childArr.put(c.getName());
+            for (ChildEntity c : children) {
+                JSONObject co = new JSONObject();
+                co.put("n", c.getName());
+                // 这个娃的作息跟着一起走：换手机之后推送文案才对得上
+                JSONArray tgArr = new JSONArray();
+                for (TimeGroup g : BeaconPrefs.getTimeGroupsFor(ctx, c.getId())) {
+                    JSONObject go = new JSONObject();
+                    go.put("n", g.name);
+                    go.put("d", g.days);
+                    go.put("r", g.ranges);
+                    tgArr.put(go);
+                }
+                if (tgArr.length() > 0) co.put("tg", tgArr);
+                childArr.put(co);
+            }
             root.put("c", childArr);
 
             JSONArray beaconArr = new JSONArray();
@@ -97,7 +117,6 @@ public final class ConfigBundleCodec {
                 // 娃用下标表示，不重复写娃名 —— 十几个信标能省下不少体积
                 int ci = indexOfChild(children, b.getChildId());
                 if (ci >= 0) o.put("ci", ci);
-                if (!b.getLabel().isEmpty()) o.put("lb", b.getLabel());
                 beaconArr.put(o);
             }
             root.put("b", beaconArr);
@@ -232,7 +251,7 @@ public final class ConfigBundleCodec {
      *
      * @return 新导入了多少颗信标；格式或版本不对返回 -1
      */
-    public static int importInto(BeaconDbHelper db, String payload) {
+    public static int importInto(Context ctx, BeaconDbHelper db, String payload) {
         try {
             String b64 = payload.trim();
             while (b64.length() % 4 != 0) b64 = b64 + "=";
@@ -246,13 +265,27 @@ public final class ConfigBundleCodec {
             List<ChildEntity> existing = db.getAllChildren();
             if (childArr != null) {
                 for (int i = 0; i < childArr.length(); i++) {
-                    String name = childArr.optString(i, "").trim();
+                    JSONObject co = childArr.optJSONObject(i);
+                    String name = co == null ? "" : co.optString("n", "").trim();
                     long id = findChildId(existing, name);
                     if (id <= 0 && !name.isEmpty()) {
                         id = db.insertChild(name);
                         existing = db.getAllChildren();
                     }
                     childIds.add(id);
+
+                    // 时间段也跟着恢复（同名娃 = 同一份作息，覆盖写）
+                    JSONArray tgArr = co == null ? null : co.optJSONArray("tg");
+                    if (id > 0 && tgArr != null) {
+                        List<TimeGroup> groups = new ArrayList<>();
+                        for (int k = 0; k < tgArr.length(); k++) {
+                            JSONObject go = tgArr.optJSONObject(k);
+                            if (go == null) continue;
+                            groups.add(new TimeGroup(go.optString("n", ""),
+                                    go.optString("d", ""), go.optString("r", ""), id));
+                        }
+                        if (!groups.isEmpty()) BeaconPrefs.setTimeGroupsFor(ctx, id, groups);
+                    }
                 }
             }
 
@@ -279,7 +312,6 @@ public final class ConfigBundleCodec {
                     b.setMinor(minor);
                     b.setMac(mac);
                     b.setRssiAt1m(o.optInt("rs", BeaconEntity.DEFAULT_RSSI_1M));
-                    b.setLabel(o.optString("lb", ""));
                     int ci = o.optInt("ci", -1);
                     if (ci >= 0 && ci < childIds.size()) b.setChildId(childIds.get(ci));
 

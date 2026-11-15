@@ -240,51 +240,6 @@
                         android:layout_marginEnd="20dp"
                         android:background="@color/divider" />
 
-                    <!-- 自定义时间段分组：上学 / 放学 / 用户自己加的，运行时填充。
-                         用 SortableLinearLayout 是为了拖动排序时能原地换位而不打断手势 -->
-                    <com.kidlink.beacon.ui.widget.SortableLinearLayout
-                        android:id="@+id/time_group_list"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:orientation="vertical"
-                        android:layout_marginTop="6dp" />
-
-                    <!-- 空状态 -->
-                    <TextView
-                        android:id="@+id/txt_time_group_empty"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:paddingStart="20dp"
-                        android:paddingEnd="20dp"
-                        android:paddingTop="12dp"
-                        android:paddingBottom="6dp"
-                        android:text="@string/time_group_empty"
-                        android:textColor="@color/text_secondary"
-                        android:textSize="13sp"
-                        android:lineSpacingExtra="2dp" />
-
-                    <!-- 添加一个新分组 -->
-                    <TextView
-                        android:id="@+id/btn_add_time_group"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:paddingStart="20dp"
-                        android:paddingEnd="20dp"
-                        android:paddingTop="12dp"
-                        android:paddingBottom="14dp"
-                        android:background="?attr/selectableItemBackground"
-                        android:text="@string/time_group_add"
-                        android:textColor="@color/primary"
-                        android:textSize="15sp"
-                        android:textStyle="bold" />
-
-                    <View
-                        android:layout_width="match_parent"
-                        android:layout_height="1dp"
-                        android:layout_marginStart="20dp"
-                        android:layout_marginEnd="20dp"
-                        android:background="@color/divider" />
-
                     <!-- 推送冷却 -->
                     <LinearLayout
                         android:id="@+id/row_cooldown"

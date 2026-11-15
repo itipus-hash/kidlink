@@ -57,6 +57,8 @@ public class BeaconPrefs {
     private static final String KEY_APPROACH_METERS = "approach_meters";
     /** 上学 / 放学这种自定义时间段分组，存 JSON 数组 */
     private static final String KEY_TIME_GROUPS = "time_groups";
+    /** 老版本的全局时间段是否已经认领给第一个娃（只认领一次） */
+    private static final String KEY_TIME_GROUPS_CLAIMED = "time_groups_claimed";
     /**
      * 时间段分组的语义版本。
      * v1：days 为空 = 每天都算（1.4.21 及更早）
@@ -596,7 +598,8 @@ public class BeaconPrefs {
                     list.add(new TimeGroup(
                             o.optString("n", ""),
                             o.optString("d", ""),
-                            o.optString("r", "")));
+                            o.optString("r", ""),
+                            o.optLong("ci", 0)));
                 }
             } catch (Exception ignored) {
             }
@@ -627,12 +630,79 @@ public class BeaconPrefs {
                     o.put("n", g.name == null ? "" : g.name);
                     o.put("d", g.days == null ? "" : g.days);
                     o.put("r", g.ranges == null ? "" : g.ranges);
+                    o.put("ci", g.childId);
                     arr.put(o);
                 } catch (Exception ignored) {
                 }
             }
         }
         sp(ctx).edit().putString(KEY_TIME_GROUPS, arr.toString()).apply();
+    }
+
+    /**
+     * 某一个娃名下全部的时间段分组，顺序就是页面上的显示顺序。
+     *
+     * 只认自己的，不合并「全局」那一份：老数据（childId=0）由
+     * {@link #migrateSharedTimeGroupsTo(long)} 一次性认领给第一个娃，
+     * 合并读会让每个娃都冒出一份别人的作息，反而更乱。
+     */
+    public static java.util.List<TimeGroup> getTimeGroupsFor(Context ctx, long childId) {
+        java.util.List<TimeGroup> out = new java.util.ArrayList<>();
+        if (childId <= 0) return out;
+        for (TimeGroup g : getTimeGroups(ctx)) {
+            if (g.childId == childId) out.add(g);
+        }
+        return out;
+    }
+
+    /** 覆盖某一个娃名下的分组，别的娃那份原样留着 */
+    public static void setTimeGroupsFor(Context ctx, long childId, java.util.List<TimeGroup> list) {
+        if (childId <= 0) return;
+        java.util.List<TimeGroup> all = new java.util.ArrayList<>();
+        for (TimeGroup g : getTimeGroups(ctx)) {
+            if (g.childId != childId) all.add(g);
+        }
+        if (list != null) {
+            for (TimeGroup g : list) {
+                if (g == null) continue;
+                TimeGroup copy = g.copy();
+                copy.childId = childId;
+                all.add(copy);
+            }
+        }
+        setTimeGroups(ctx, all);
+    }
+
+    /**
+     * 老版本的全局时间段一次性认领给某个娃。
+     *
+     * 升级上来的用户原来在「消息推送设置」里配的上学 / 放学都还是全局的（childId=0），
+     * 不管的话搬到每个娃下面会全部「消失」。第一个娃打开管理页时认领走，
+     * 之后各管各的；用 marker 保证只认领一次，免得把后来新建的娃也塞满。
+     */
+    public static void migrateSharedTimeGroupsTo(Context ctx, long childId) {
+        if (childId <= 0) return;
+        if (sp(ctx).getBoolean(KEY_TIME_GROUPS_CLAIMED, false)) return;
+        java.util.List<TimeGroup> all = getTimeGroups(ctx);
+        boolean changed = false;
+        for (TimeGroup g : all) {
+            if (g.childId <= 0) {
+                g.childId = childId;
+                changed = true;
+            }
+        }
+        if (changed) setTimeGroups(ctx, all);
+        sp(ctx).edit().putBoolean(KEY_TIME_GROUPS_CLAIMED, true).apply();
+    }
+
+    /** 删掉某个娃名下全部时间段（删分组时用，不然那些配置会变成孤儿） */
+    public static void clearTimeGroupsFor(Context ctx, long childId) {
+        if (childId <= 0) return;
+        java.util.List<TimeGroup> all = new java.util.ArrayList<>();
+        for (TimeGroup g : getTimeGroups(ctx)) {
+            if (g.childId != childId) all.add(g);
+        }
+        setTimeGroups(ctx, all);
     }
 
     /** 悬浮提醒触发距离（米），0 = 关闭；默认 10 米 */

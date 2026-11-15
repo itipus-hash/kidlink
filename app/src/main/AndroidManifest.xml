@@ -71,6 +71,11 @@
             android:screenOrientation="portrait" />
 
         <activity
+            android:name=".ui.TimeGroupActivity"
+            android:exported="false"
+            android:screenOrientation="portrait" />
+
+        <activity
             android:name=".ui.ScanBeaconActivity"
             android:exported="false"
             android:screenOrientation="portrait" />

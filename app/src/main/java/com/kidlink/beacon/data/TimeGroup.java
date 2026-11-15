@@ -9,6 +9,10 @@ import java.util.List;
  * - name   名称，长按可以改，同时会出现在推送文案里
  * - days   生效的星期，1=周一 … 7=周日，逗号分隔；空字符串表示**这几天都不推送**
  * - ranges 时间段，格式见 {@link TimeRanges}，例如 "7:40-8:30,13:50-14:20"
+ * - childId 挂在哪一个娃名下（children.id），0 = 老数据、还没归属
+ *
+ * 为什么要绑娃：不同娃的作息本来就不一样（小学 7:40 到校、幼儿园 8:20），
+ * 以前一张全局表只能顾一头，所以时间段从「设置」挪到了「信标管理 → 每个娃」。
  */
 public class TimeGroup {
 
@@ -18,11 +22,18 @@ public class TimeGroup {
     public String name;
     public String days;
     public String ranges;
+    /** 归属的娃，0 = 还没归属（老版本的全局数据） */
+    public long childId;
 
     public TimeGroup(String name, String days, String ranges) {
+        this(name, days, ranges, 0);
+    }
+
+    public TimeGroup(String name, String days, String ranges, long childId) {
         this.name = name == null ? "" : name.trim();
         this.days = days == null ? "" : days.trim();
         this.ranges = ranges == null ? "" : ranges.trim();
+        this.childId = Math.max(0, childId);
     }
 
     public String displayName() {
@@ -95,6 +106,6 @@ public class TimeGroup {
     }
 
     public TimeGroup copy() {
-        return new TimeGroup(name, days, ranges);
+        return new TimeGroup(name, days, ranges, childId);
     }
 }

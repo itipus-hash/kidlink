@@ -18,6 +18,11 @@ public class BeaconDbHelper extends SQLiteOpenHelper {
     private static final String DB_NAME = "kidlink_beacon.db";
     private static final int DB_VERSION = 4;
 
+    /** 新信标的默认名字，和 strings.xml 里的 beacon_default_name 保持一致 */
+    private static final String DEFAULT_BEACON_NAME = "书包";
+    /** 拿不到名字时给娃用的兜底名 */
+    private static final String DEFAULT_CHILD_NAME = "孩子";
+
     public static final String TABLE_BEACONS = "beacons";
     /** 娃：信标挂在娃下面，首页一块面板 = 一个娃 */
     public static final String TABLE_CHILDREN = "children";
@@ -341,7 +346,14 @@ public class BeaconDbHelper extends SQLiteOpenHelper {
         if (beacons.isEmpty()) return children;
 
         if (children.isEmpty()) {
-            if (insertChild(beacons.get(0).getName()) > 0) {
+            // 拿第一颗信标的名字当娃名。但如果那颗还是默认名（「书包」），
+            // 拿它当娃名就成了「爸爸接到书包了」—— 这种时候退回「孩子」，让用户自己改
+            String guess = beacons.get(0).getName();
+            if (guess == null || guess.trim().isEmpty()
+                    || guess.trim().equals(DEFAULT_BEACON_NAME)) {
+                guess = DEFAULT_CHILD_NAME;
+            }
+            if (insertChild(guess) > 0) {
                 children = getAllChildren();
             }
         }

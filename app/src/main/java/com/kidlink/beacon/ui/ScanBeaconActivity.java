@@ -259,7 +259,11 @@ public class ScanBeaconActivity extends AppCompatActivity {
         BeaconEntity beacon = new BeaconEntity();
         String name = item.name;
         if (name == null || name.trim().isEmpty()) {
-            name = getString(R.string.scan_beacon_unknown, item.major, item.minor);
+            // 第一颗信标默认就叫「书包」—— 绝大多数人第一颗就是放书包里的，
+            // 省得先面对一串「未命名信标 5/6」再去改名；后面几颗还是按 major/minor 区分
+            name = dbHelper.getAllBeacons().isEmpty()
+                    ? getString(R.string.beacon_default_name)
+                    : getString(R.string.scan_beacon_unknown, item.major, item.minor);
         }
         beacon.setName(name);
         beacon.setRemark("");

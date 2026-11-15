@@ -31,7 +31,7 @@ Eddystone（Google 的另一套格式）和普通蓝牙设备做不到这点：
 
     <!-- Beacon manager -->
     <string name="beacon_manager_title">蓝牙信标</string>
-    <string name="beacon_manager_hint">按娃分组。点分组头折叠 / 长按改名，点卡片看信息，按住卡片滑动可排序</string>
+    <string name="beacon_manager_hint">按娃分组。点分组头折叠 / 长按改名，点卡片看信息</string>
     <string name="add_beacon_hint">扫描或扫码</string>
     <string name="add_to_child">归到%s</string>
     <string name="beacon_empty_add_hint">扫描附近信标，或用二维码导入</string>
@@ -196,6 +196,10 @@ Eddystone（Google 的另一套格式）和普通蓝牙设备做不到这点：
     <string name="time_group_name_hint">名称，例如：上学</string>
     <string name="time_group_days_hint">哪些天推送（全都不选 = 不推送）</string>
     <string name="time_group_delete">删除这个类型</string>
+    <string name="time_group_title">时间段 · %s</string>
+    <string name="time_group_page_hint">这个娃的作息。命中哪个时间段，推送括号里就写哪个名字。\n排在前面的优先；按住右边的 ≡ 可以拖动排序。</string>
+    <string name="info_time_group">时间段</string>
+    <string name="time_group_none">未设置 · 点这里添加</string>
     <string name="time_group_name_empty">名称不能为空</string>
     <string name="time_range_add">＋ 添加时间段</string>
     <string name="time_range_empty">还没有时间段，点下面添加</string>
@@ -226,6 +230,7 @@ Eddystone（Google 的另一套格式）和普通蓝牙设备做不到这点：
     <string name="scan_beacon_empty">正在搜索附近的 iBeacon…\n请让信标上电并靠近手机\n若一直是 0 台，检查蓝牙和系统「位置信息」是否打开</string>
     <string name="scan_beacon_none_found">没有发现信标\n请确认信标已上电并在附近</string>
     <string name="scan_beacon_unknown">未命名信标 %d/%d</string>
+    <string name="beacon_default_name">书包</string>
     <string name="scan_beacon_saved">已添加「%s」</string>
     <string name="scan_beacon_duplicate">该信标已添加过了</string>
     <string name="scan_state_with_count">正在扫描…  已收到 %d 台设备广播</string>

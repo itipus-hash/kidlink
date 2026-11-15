@@ -207,7 +207,7 @@ public class QRScanActivity extends AppCompatActivity {
                 return;   // scanned 保持 false，相机继续扫下一帧
             }
             BeaconDbHelper bundleDb = new BeaconDbHelper(this);
-            int inserted = ConfigBundleCodec.importInto(bundleDb, assembled);
+            int inserted = ConfigBundleCodec.importInto(this, bundleDb, assembled);
             if (inserted < 0) {
                 runOnUiThread(() -> {
                     Feedback.show(this, R.string.import_fail);

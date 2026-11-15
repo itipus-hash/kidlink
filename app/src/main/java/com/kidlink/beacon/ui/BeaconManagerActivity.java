@@ -195,6 +195,10 @@ public class BeaconManagerActivity extends AppCompatActivity {
         dbHelper.ensureChildren();
 
         List<ChildEntity> children = dbHelper.getAllChildren();
+        // 老版本的全局时间段（设置 → 消息推送设置里配的）认领给第一个娃，只做一次
+        if (!children.isEmpty()) {
+            BeaconPrefs.migrateSharedTimeGroupsTo(this, children.get(0).getId());
+        }
         childNames.clear();
         for (ChildEntity c : children) {
             childNames.put(c.getId(), c.displayName());
@@ -236,7 +240,7 @@ public class BeaconManagerActivity extends AppCompatActivity {
      * 换手机、给家里人配一台，扫一遍就全过去了，不用一颗颗扫。
      */
     private void shareAllConfig() {
-        List<String> frames = ConfigBundleCodec.encode(dbHelper);
+        List<String> frames = ConfigBundleCodec.encode(this, dbHelper);
         if (frames.isEmpty()) {
             Feedback.show(this, R.string.share_config_empty);
             return;
@@ -274,12 +278,17 @@ public class BeaconManagerActivity extends AppCompatActivity {
         rv.setAdapter(adapter);
         rv.setVisibility(collapsed ? View.GONE : View.VISIBLE);
 
+        // 时间段放在信标之前：先定「这个娃的作息」，再往下才是「挂了哪几颗信标」
+        final View timeRow = buildTimeGroupRow(child);
+        timeRow.setVisibility(collapsed ? View.GONE : View.VISIBLE);
+
         header.setOnClickListener(v -> {
             boolean nowCollapsed = !BeaconPrefs.isChildCollapsed(this, child.getId());
             BeaconPrefs.setChildCollapsed(this, child.getId(), nowCollapsed);
             chevron.setText(nowCollapsed
                     ? R.string.chevron_collapsed : R.string.chevron_expanded);
             rv.setVisibility(nowCollapsed ? View.GONE : View.VISIBLE);
+            timeRow.setVisibility(nowCollapsed ? View.GONE : View.VISIBLE);
         });
         header.setOnLongClickListener(v -> {
             showChildMenu(child);
@@ -287,7 +296,51 @@ public class BeaconManagerActivity extends AppCompatActivity {
         });
 
         layoutGroups.addView(header);
+        layoutGroups.addView(timeRow);
         layoutGroups.addView(rv);
+    }
+
+    /**
+     * 分组里的「时间段」一行：左边是标题，右边是这个娃已配的分组名，点进编辑页。
+     *
+     * 只摆一行摘要、不把时间段摊开：一个娃通常就「上学 / 放学」两条，
+     * 摊开会把信标挤到屏幕外；而这两条又几乎不会天天改。
+     */
+    private View buildTimeGroupRow(ChildEntity child) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(android.view.Gravity.CENTER_VERTICAL);
+        row.setPadding(dp(20), dp(8), dp(20), dp(6));
+        android.util.TypedValue ripple = new android.util.TypedValue();
+        getTheme().resolveAttribute(android.R.attr.selectableItemBackground, ripple, true);
+        row.setBackgroundResource(ripple.resourceId);
+        row.setClickable(true);
+        row.setFocusable(true);
+
+        TextView label = new TextView(this);
+        label.setText(R.string.info_time_group);
+        label.setTextSize(12);
+        label.setTextColor(ContextCompat.getColor(this, R.color.text_secondary));
+        row.addView(label);
+
+        List<com.kidlink.beacon.data.TimeGroup> groups =
+                BeaconPrefs.getTimeGroupsFor(this, child.getId());
+        String summary = TimeGroupActivity.summarize(groups);
+
+        TextView value = new TextView(this);
+        value.setText(summary == null ? getString(R.string.time_group_none) : summary);
+        value.setTextSize(13);
+        value.setTextColor(ContextCompat.getColor(this,
+                summary == null ? R.color.text_secondary : R.color.primary));
+        value.setSingleLine(true);
+        value.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        LinearLayout.LayoutParams lpValue = new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+        lpValue.leftMargin = dp(10);
+        row.addView(value, lpValue);
+
+        row.setOnClickListener(v -> startActivity(TimeGroupActivity.intentFor(this, child)));
+        return row;
     }
 
     private void openShop() {
@@ -433,6 +486,8 @@ public class BeaconManagerActivity extends AppCompatActivity {
                 .setMessage(msg)
                 .setNegativeButton(R.string.cancel, null)
                 .setPositiveButton(R.string.child_delete, (d, w) -> {
+                    // 连这个娃名下的时间段一起清掉 —— 娃都没了，作息留着就是孤魂
+                    BeaconPrefs.clearTimeGroupsFor(this, child.getId());
                     dbHelper.deleteChild(child.getId());
                     reload();
                     tip(getString(R.string.child_deleted, child.displayName()));
@@ -440,15 +495,7 @@ public class BeaconManagerActivity extends AppCompatActivity {
                 .show();
     }
 
-    // === 归属（娃 / 场景标签） ===
-
-    /**
-     * 卡片第二行：场景标签。
-     * 分组头已经写了娃名，卡片里再写一遍纯属重复，所以这里只留标签。
-     */
-    private String tagOf(BeaconEntity b) {
-        return b.getLabel();
-    }
+    // === 归属 ===
 
     /**
      * 把信标移进某个娃的分组。
@@ -518,33 +565,6 @@ public class BeaconManagerActivity extends AppCompatActivity {
                 .show();
     }
 
-    /**
-     * 场景标签：「奥数」「钢琴」这种，决定推送文案的括号里写什么。
-     *
-     * 留空 = 不限场景，推送时退回按时间段分组猜。所以这里必须允许存空串，
-     * 不校验「不能为空」—— 「清空标签」本身就是一个正当操作。
-     */
-    private void editLabel(BeaconEntity b) {
-        EditText input = new EditText(this);
-        input.setText(b.getLabel());
-        input.setSelection(input.getText().length());
-        input.setHint(R.string.info_label_hint);
-        input.setSingleLine(true);
-
-        new MaterialAlertDialogBuilder(this)
-                .setTitle(R.string.info_label_title)
-                .setMessage(R.string.info_label_msg)
-                .setView(wrapInPadding(input))
-                .setNegativeButton(R.string.cancel, null)
-                .setPositiveButton(R.string.save, (d, w) -> {
-                    b.setLabel(input.getText().toString());
-                    dbHelper.updateBeacon(b);
-                    reload();
-                    tip(getString(R.string.info_label_saved));
-                })
-                .show();
-    }
-
     // === 推送冷却 / 信标信息 ===
 
     /**
@@ -570,7 +590,7 @@ public class BeaconManagerActivity extends AppCompatActivity {
     }
 
     /**
-     * 信标信息：归属 / 场景标签 / UUID / Major·Minor·蓝牙地址 / 上次推送·冷却，底部一排操作。
+     * 信标信息：归属 / UUID / Major·Minor·蓝牙地址 / 上次推送·冷却，底部一排操作。
      */
     private void showBeaconInfo(BeaconEntity b) {
         LinearLayout box = new LinearLayout(this);
@@ -578,16 +598,13 @@ public class BeaconManagerActivity extends AppCompatActivity {
         int pad = dp(20);
         box.setPadding(pad, dp(4), pad, dp(4));
 
-        // 归属和场景标签放在最上面：这两项决定首页显示什么、推送写什么，
-        // 是这个页面里唯一会经常改的东西
+        // 归属放最上面：它决定首页显示在谁的面板里，是这里唯一会经常改的东西。
+        // 场景标签已经去掉了 —— 推送括号现在由「这个娃的时间段」决定
         String childName = childNames.get(b.getChildId());
         addPickerRow(box, R.string.info_child,
                 childName == null || childName.isEmpty()
                         ? getString(R.string.info_child_none) : childName,
                 v -> { dismissInfo(); pickChild(b); });
-        addPickerRow(box, R.string.info_label,
-                b.hasLabel() ? b.getLabel() : getString(R.string.info_label_none),
-                v -> { dismissInfo(); editLabel(b); });
 
         addInfoRow(box, R.string.info_uuid, b.getUuidFormatted(), true);
         // 三件套和蓝牙地址挤一行：同型号信标只有末尾那串地址不同，放一起最好对比
@@ -910,10 +927,8 @@ public class BeaconManagerActivity extends AppCompatActivity {
                 txtName.setTextColor(ContextCompat.getColor(BeaconManagerActivity.this,
                         R.color.text_primary));
 
-                // 第二行只放场景标签：娃名在分组头上已经写过了
-                txtTag.setText(tagOf(b));
-                txtTag.setTextColor(ContextCompat.getColor(BeaconManagerActivity.this,
-                        R.color.text_secondary));
+                // 第二行原来放信标的场景标签，现在标签去掉了，直接不显示
+                txtTag.setVisibility(View.GONE);
 
                 attachGestures();
             }

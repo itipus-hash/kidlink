@@ -1211,7 +1211,7 @@ public class MainActivity extends AppCompatActivity {
 
         // 时间段：今天一整天没勾任何分组 → 这天不推（和接送成功推送保持一致）
         final java.util.Date now = new java.util.Date();
-        if (!todayHasAnyGroup(now)) return;
+        if (!todayHasAnyGroup(childId, now)) return;
 
         String picker = BeaconPrefs.getPickerName(this);
         String childName = p.child.displayName();
@@ -1295,8 +1295,8 @@ public class MainActivity extends AppCompatActivity {
         String picker = BeaconPrefs.getPickerName(this);
         java.util.Date now = new java.util.Date();
 
-        // 时间段类型里今天一天都没勾 → 今天整天不推接送通知（周末不接娃就是这种情况）
-        if (!todayHasAnyGroup(now)) return;
+        // 这个娃的时间段今天一天都没勾 → 今天整天不推接送通知（周末不接娃就是这种情况）
+        if (!todayHasAnyGroup(childId, now)) return;
 
         final String msg = buildArriveMessage(picker, p.child, beacon, now);
 
@@ -1317,10 +1317,10 @@ public class MainActivity extends AppCompatActivity {
         });
     }
 
-    /** 今天（星期几）有没有至少一个时间段类型勾上了；一个都没勾 = 今天不推送 */
-    private boolean todayHasAnyGroup(java.util.Date now) {
+    /** 这个娃今天（星期几）有没有至少一个时间段勾上了；一个都没勾 = 今天不推送 */
+    private boolean todayHasAnyGroup(long childId, java.util.Date now) {
         java.util.List<com.kidlink.beacon.data.TimeGroup> groups =
-                BeaconPrefs.getTimeGroups(this);
+                BeaconPrefs.getTimeGroupsFor(this, childId);
         if (groups.isEmpty()) return true;   // 没配置就不做这层限制
         java.util.Calendar cal = java.util.Calendar.getInstance();
         cal.setTime(now);
@@ -1332,14 +1332,12 @@ public class MainActivity extends AppCompatActivity {
     }
 
     /**
-     * 接送成功的文案，三层，从上往下第一个命中的赢：
+     * 接送成功的文案，两层：
      *
-     * 1. **信标自己定义了场景** → 「爸爸接到许小鱼了（奥数）」
-     *    奥数包上挂了独立信标，它进区本身就说明了「现在接的是奥数课」，比时间段更准，
-     *    所以优先级最高。标签在信标信息里填，留空表示不限场景。
-     * 2. **时间段命中** → 「爸爸接到许小鱼了（放学）」
-     *    命中设置里某个分组的时间窗口就用那个分组名，改名字文案自动跟着变。
-     * 3. **都没命中** → 「爸爸接到许小鱼了」
+     * 1. **时间段命中** → 「爸爸接到许小鱼了（放学）」
+     *    命中这个娃某个分组的时间窗口就用那个分组名，改名字文案自动跟着变。
+     *    时间段挂在娃下面（信标管理 → 分组里的「时间段」），每个娃一套。
+     * 2. **都没命中** → 「爸爸接到许小鱼了」
      *
      * 娃名取信标归属的那个娃，不是信标名 —— 家长要看到的是「接到了谁」，
      * 不是「哪颗设备被扫到了」。只有一颗信标、又没设归属的极端情况才退回信标名。
@@ -1359,10 +1357,6 @@ public class MainActivity extends AppCompatActivity {
                 ? child.displayName()
                 : (beacon != null ? beacon.getName() : "");
 
-        if (beacon != null && beacon.hasLabel()) {
-            return getString(R.string.arrive_typed_message, picker, childName, beacon.getLabel());
-        }
-
         java.util.Calendar cal = java.util.Calendar.getInstance();
         cal.setTime(now);
         int minuteOfDay = cal.get(java.util.Calendar.HOUR_OF_DAY) * 60
@@ -1370,7 +1364,8 @@ public class MainActivity extends AppCompatActivity {
         // Calendar 里 1=周日 … 7=周六，换成 ISO 的 1=周一 … 7=周日
         int isoDay = (cal.get(java.util.Calendar.DAY_OF_WEEK) + 5) % 7 + 1;
 
-        for (com.kidlink.beacon.data.TimeGroup g : BeaconPrefs.getTimeGroups(this)) {
+        long groupChildId = child != null ? child.getId() : 0;
+        for (com.kidlink.beacon.data.TimeGroup g : BeaconPrefs.getTimeGroupsFor(this, groupChildId)) {
             if (g == null) continue;
             if (!g.matchesDay(isoDay)) continue;
             if (com.kidlink.beacon.data.TimeRanges.contains(g.ranges, minuteOfDay)) {

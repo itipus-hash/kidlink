@@ -28,7 +28,7 @@ public class SettingsQrCodec {
      * 配置格式版本。字段增删都要 +1 —— 收到不同版本的码直接拒绝，
      * 免得把对方的设置按自己的理解硬塞进来。
      */
-    public static final int VERSION = 6;
+    public static final int VERSION = 7;
 
     private SettingsQrCodec() {}
 
@@ -114,15 +114,28 @@ public class SettingsQrCodec {
         BeaconPrefs.setPushTokens(ctx, list);
     }
 
-    /** 时间段分组编成数组：n 名称 / d 星期 / r 时间段 */
+    /**
+     * 时间段分组编成数组：n 名称 / d 星期 / r 时间段 / c 归属娃的名字。
+     *
+     * 时间段本身还留在设置码里，是为了「只同步设置」的人也能把作息带走；
+     * 但它现在挂在娃下面，所以额外带一个娃名 —— 对方手机上有同名娃就归过去，
+     * 没有就先当「共享」放着（不至于丢）。
+     */
     private static org.json.JSONArray encodeTimeGroups(Context ctx) {
         org.json.JSONArray arr = new org.json.JSONArray();
+        java.util.Map<Long, String> names = new java.util.HashMap<>();
+        for (com.kidlink.beacon.data.ChildEntity c
+                : new com.kidlink.beacon.data.BeaconDbHelper(ctx).getAllChildren()) {
+            names.put(c.getId(), c.getName());
+        }
         for (com.kidlink.beacon.data.TimeGroup g : BeaconPrefs.getTimeGroups(ctx)) {
             try {
                 org.json.JSONObject o = new org.json.JSONObject();
                 o.put("n", g.name);
                 o.put("d", g.days);
                 o.put("r", g.ranges);
+                String owner = names.get(g.childId);
+                if (owner != null && !owner.isEmpty()) o.put("c", owner);
                 arr.put(o);
             } catch (Exception ignored) {
             }
@@ -132,6 +145,11 @@ public class SettingsQrCodec {
 
     private static void applyTimeGroups(Context ctx, org.json.JSONArray arr) {
         if (arr == null) return;
+        java.util.Map<String, Long> ids = new java.util.HashMap<>();
+        for (com.kidlink.beacon.data.ChildEntity c
+                : new com.kidlink.beacon.data.BeaconDbHelper(ctx).getAllChildren()) {
+            ids.put(c.getName(), c.getId());
+        }
         java.util.List<com.kidlink.beacon.data.TimeGroup> list = new java.util.ArrayList<>();
         for (int i = 0; i < arr.length(); i++) {
             org.json.JSONObject o = arr.optJSONObject(i);
@@ -142,6 +160,8 @@ public class SettingsQrCodec {
                     o.optString("r", ""));
             // 名称和时间都空的条目没意义，不写进去
             if (g.name.isEmpty() && g.ranges.isEmpty()) continue;
+            Long owner = ids.get(o.optString("c", ""));
+            g.childId = owner == null ? 0 : owner;
             list.add(g);
         }
         BeaconPrefs.setTimeGroups(ctx, list);
