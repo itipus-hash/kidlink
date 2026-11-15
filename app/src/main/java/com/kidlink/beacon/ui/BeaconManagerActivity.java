@@ -2,7 +2,11 @@ package com.kidlink.beacon.ui;
 
 import android.Manifest;
 import android.annotation.SuppressLint;
+import android.bluetooth.BluetoothAdapter;
+import android.content.BroadcastReceiver;
+import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.pm.PackageManager;
 import android.os.Build;
 import android.os.Bundle;
@@ -32,6 +36,9 @@ import com.google.android.material.appbar.MaterialToolbar;
 import com.google.android.material.card.MaterialCardView;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import com.kidlink.beacon.R;
+import com.kidlink.beacon.ble.BeaconScanner;
+import com.kidlink.beacon.ble.IBeaconData;
+import com.kidlink.beacon.ble.IBeaconParser;
 import com.kidlink.beacon.data.BeaconDbHelper;
 import com.kidlink.beacon.data.BeaconEntity;
 import com.kidlink.beacon.data.BeaconPrefs;
@@ -75,12 +82,18 @@ public class BeaconManagerActivity extends AppCompatActivity {
     private static final int TYPE_ADD = 1;
     private static final long HOLD_MS = 500L;
 
+    /** RSSI 平滑窗口：和首页一致，5 个包取平均 */
+    private static final int RSSI_WINDOW = 5;
     /**
-     * 一个信标都没有时，底部那条推荐里给的淘宝链接。
+     * 多久没再收到广播就算「未连接」。
      *
-     * 放在这里而不是首页：用户「手里没硬件」这件事，是在信标管理页发现的 ——
-     * 进来一看是空的，这时候顺手给型号最合适。
+     * 信标一般 1 秒广播一次，留 5 秒的余量：掏手机、卡片刚滚出来、
+     * 信号偶尔丢两个包，都不至于让绿点闪成灰的。
      */
+    private static final long LIVE_STALE_MS = 5000L;
+    /** 状态刷新节拍：只用来把「超时没信号」的卡片刷回灰色 */
+    private static final long LIVE_TICK_MS = 1000L;
+
     /**
      * 淘宝淘口令，不是短链。
      *
@@ -112,11 +125,79 @@ public class BeaconManagerActivity extends AppCompatActivity {
      */
     private long pendingChildId = 0;
 
+    /**
+     * 这一页自己的扫描器。
+     *
+     * 不共用首页那个：首页停在前台时才扫，而且只盯当前娃的信标；
+     * 这一页要一次看全部娃的全部信标，而且进来就是为了确认「东西在不在包里」。
+     * 两个扫描器同时在跑是允许的（系统按 callback 分发），离开这一页就停。
+     */
+    private BeaconScanner liveScanner;
+    /** 上一轮扫描的目标集合指纹，变了才重启扫描（重启会丢一两秒的数据） */
+    private String liveTargetsKey = "";
+    /** beaconId → 最近一次信号（平滑 RSSI / 距离 / 时间） */
+    private final Map<Long, Live> liveById = new HashMap<>();
+    /** 当前页面上的所有分组 Adapter，刷新状态时逐个通知 */
+    private final List<BeaconAdapter> adapters = new ArrayList<>();
+
     private final Handler handler = new Handler(Looper.getMainLooper());
+    /**
+     * 每秒跑一次：把超时没信号的卡片刷回「未连接」，顺便兜住「扫描掉了但没人重启」。
+     */
+    private final Runnable liveTick = new Runnable() {
+        @Override
+        public void run() {
+            ensureLiveScanning();
+            refreshLiveCards();
+            handler.postDelayed(this, LIVE_TICK_MS);
+        }
+    };
+
+    /**
+     * 蓝牙开关监听。
+     *
+     * 关掉蓝牙时系统会静默停掉扫描，但扫描器自己的 isScanning 还停在 true ——
+     * 只靠它判断的话，用户把蓝牙关了再打开，卡片会一直灰着不恢复。
+     * 所以这里在重新打开的那一刻把状态拍平再重扫。
+     */
+    private final BroadcastReceiver btReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context ctx, Intent intent) {
+            if (!BluetoothAdapter.ACTION_STATE_CHANGED.equals(intent.getAction())) return;
+            int state = intent.getIntExtra(BluetoothAdapter.EXTRA_STATE, BluetoothAdapter.ERROR);
+            if (state == BluetoothAdapter.STATE_ON) {
+                liveTargetsKey = "";   // 强制重设目标 + 重扫
+                if (liveScanner != null) liveScanner.stopScan();
+                startLiveScan();
+            } else if (state == BluetoothAdapter.STATE_OFF) {
+                if (liveScanner != null) liveScanner.stopScan();
+            }
+        }
+    };
+
+    /**
+     * 一颗信标的实时状态。
+     *
+     * 平滑窗口放在这里（而不是信标对象里）：卡片重排、折叠展开、
+     * 退出再进来，数字都是接着上一次的，不会突然跳一下。
+     */
+    private static class Live {
+        final java.util.LinkedList<Integer> buf = new java.util.LinkedList<>();
+        int rssi;
+        double distance;
+        long at;
+        /** 上一次写进卡片的距离，用来做显示迟滞（-1 = 还没写过） */
+        double shownDistance = -1;
+    }
 
     private final ActivityResultLauncher<String[]> permissionLauncher =
             registerForActivityResult(new ActivityResultContracts.RequestMultiplePermissions(),
-                    result -> { /* 结果不阻断使用，操作时会再次校验 */ });
+                    result -> {
+                        // 结果不阻断使用，操作时会再次校验。
+                        // 但授权通过的这一刻要立刻开扫 —— 否则卡片会一直停在「未连接」，
+                        // 直到用户退出再进来一次。
+                        startLiveScan();
+                    });
 
     private final ActivityResultLauncher<Intent> resultLauncher =
             registerForActivityResult(new ActivityResultContracts.StartActivityForResult(),
@@ -171,6 +252,155 @@ public class BeaconManagerActivity extends AppCompatActivity {
     protected void onResume() {
         super.onResume();
         reload();
+        ContextCompat.registerReceiver(this, btReceiver,
+                new IntentFilter(BluetoothAdapter.ACTION_STATE_CHANGED),
+                ContextCompat.RECEIVER_NOT_EXPORTED);
+        startLiveScan();
+    }
+
+    @Override
+    protected void onPause() {
+        stopLiveScan();
+        try {
+            unregisterReceiver(btReceiver);
+        } catch (IllegalArgumentException ignored) {
+            // 没注册过就退出了，忽略
+        }
+        super.onPause();
+    }
+
+    // === 实时状态 ===
+
+    /**
+     * 开始盯这一页的所有信标。
+     *
+     * 目标集合变了（加了信标、改了归属、删了信标）才重启扫描 —— 重启会清空
+     * 「这台设备已经报过」的记录，也会让距离数字从空开始，能不动就不动。
+     */
+    private void startLiveScan() {
+        List<BeaconEntity> all = dbHelper.getAllBeacons();
+        if (all.isEmpty()) {
+            stopLiveScan();
+            return;
+        }
+        if (liveScanner == null) {
+            liveScanner = new BeaconScanner(this);
+            liveScanner.setListener(new BeaconScanner.OnBeaconScanListener() {
+                @Override
+                public void onBeaconFound(IBeaconData beacon, int filteredRssi, double distance) {
+                    // 统一在 onRawBeaconData 里处理
+                }
+
+                @Override
+                public void onRawBeaconData(IBeaconData beacon, android.bluetooth.le.ScanResult scanResult) {
+                    onLiveSignal(beacon, scanResult);
+                }
+
+                @Override
+                public void onScanError(int errorCode, String message) {
+                    // 蓝牙关了 / 没授权：卡片就停在上一次的灰字「未连接」，
+                    // 不再弹提示打扰 —— 这一页本来就能看出来没信号
+                }
+            });
+        }
+
+        StringBuilder key = new StringBuilder();
+        for (BeaconEntity b : all) {
+            key.append(b.getId()).append(':').append(b.getMajor()).append('.')
+                    .append(b.getMinor()).append('|');
+        }
+        String newKey = key.toString();
+        if (!newKey.equals(liveTargetsKey)) {
+            liveScanner.stopScan();
+            liveScanner.setTargets(all);
+            liveTargetsKey = newKey;
+        }
+
+        if (!liveScanner.hasScanPermission() || !liveScanner.isBluetoothReady()) return;
+        if (!liveScanner.isScanning()) liveScanner.startScan();
+
+        handler.removeCallbacks(liveTick);
+        handler.postDelayed(liveTick, LIVE_TICK_MS);
+    }
+
+    private void stopLiveScan() {
+        handler.removeCallbacks(liveTick);
+        if (liveScanner != null && liveScanner.isScanning()) liveScanner.stopScan();
+    }
+
+    /**
+     * 兜底：蓝牙开着、权限有、但扫描器认为自己在扫却一个包都没来的时候，重开一次。
+     *
+     * 只在「本来就在扫」的前提下重启是不行的 —— 系统把扫描掐掉时内部标志还是 true。
+     * 所以这里改用「最近一次收到包的时间」判断：超过 2 个失效周期还没动静，
+     * 就停一次再开，等价于把扫描链路复位。信标真的走远了也不会因此乱跳，
+     * 因为卡片照样灰着，只是后台多扫了一次。
+     */
+    private void ensureLiveScanning() {
+        if (liveScanner == null) return;
+        if (!liveScanner.isBluetoothReady() || !liveScanner.hasScanPermission()) return;
+        if (!liveScanner.isScanning()) {
+            liveScanner.startScan();
+            return;
+        }
+        long lastPacket = 0;
+        for (Live l : liveById.values()) {
+            if (l.at > lastPacket) lastPacket = l.at;
+        }
+        if (lastPacket > 0 && System.currentTimeMillis() - lastPacket > LIVE_STALE_MS * 2) {
+            liveScanner.stopScan();
+            liveScanner.startScan();
+        }
+    }
+
+    /**
+     * 收到一包广播：找到是哪颗信标，更新平滑值，顺手把这张卡片重画。
+     *
+     * 匹配规则和首页一致：库里存了 MAC 的只认 MAC（同品牌两台信标出厂三件套可能一样），
+     * 没存 MAC 的才退回去比 UUID + Major + Minor。
+     */
+    private void onLiveSignal(IBeaconData data, android.bluetooth.le.ScanResult result) {
+        String mac = "";
+        try {
+            if (result != null && result.getDevice() != null) {
+                String a = result.getDevice().getAddress();
+                mac = a == null ? "" : a.trim().toUpperCase(Locale.US);
+            }
+        } catch (Exception ignored) {
+        }
+
+        BeaconEntity hit = null;
+        for (BeaconEntity b : dbHelper.getAllBeacons()) {
+            if (b.getMajor() != data.major || b.getMinor() != data.minor) continue;
+            if (!IBeaconParser.uuidMatch(data.uuid, b.getUuidFormatted())) continue;
+            if (b.hasMac() && !mac.isEmpty() && !b.getMac().equals(mac)) continue;
+            hit = b;
+            break;
+        }
+        if (hit == null) return;
+
+        Live live = liveById.get(hit.getId());
+        if (live == null) {
+            live = new Live();
+            liveById.put(hit.getId(), live);
+        }
+        live.buf.addLast(data.rssi);
+        while (live.buf.size() > RSSI_WINDOW) live.buf.removeFirst();
+        int sum = 0;
+        for (int r : live.buf) sum += r;
+        live.rssi = sum / live.buf.size();
+        live.distance = hit.estimateDistance(live.rssi);
+        live.at = System.currentTimeMillis();
+
+        refreshLiveCards();
+    }
+
+    /** 每张已绑定的卡片按自己那颗信标的最新状态重画 */
+    private void refreshLiveCards() {
+        long now = System.currentTimeMillis();
+        for (BeaconAdapter a : adapters) {
+            a.refreshLive(now);
+        }
     }
 
     private void requestPermissions() {
@@ -219,6 +449,7 @@ public class BeaconManagerActivity extends AppCompatActivity {
         // 重建会导致滚动位置回到顶部，先记下来，重建后补回去
         final int scrollY = scrollGroups == null ? 0 : scrollGroups.getScrollY();
         layoutGroups.removeAllViews();
+        adapters.clear();
 
         if (children.isEmpty()) {
             // 一颗信标都没有：没有分组可显示，只留「添加信标」那一个大入口
@@ -245,6 +476,13 @@ public class BeaconManagerActivity extends AppCompatActivity {
         if (scrollGroups != null) {
             scrollGroups.post(() -> scrollGroups.scrollTo(0, scrollY));
         }
+
+        // 页面开着的时候也可能加/删了信标（从这页扫进来的），
+        // 目标集合变了就重新盯一遍，否则新加的那颗永远是灰的
+        if (liveScanner != null && liveScanner.isScanning()) {
+            startLiveScan();
+        }
+        refreshLiveCards();
     }
 
     /**
@@ -290,6 +528,7 @@ public class BeaconManagerActivity extends AppCompatActivity {
         BeaconAdapter adapter = new BeaconAdapter(child, rv);
         adapter.setData(beacons);
         rv.setAdapter(adapter);
+        adapters.add(adapter);
         rv.setVisibility(collapsed ? View.GONE : View.VISIBLE);
 
         // 时间段放在信标之前：先定「这个娃的作息」，再往下才是「挂了哪几颗信标」
@@ -865,6 +1104,8 @@ public class BeaconManagerActivity extends AppCompatActivity {
         private final List<BeaconEntity> items = new ArrayList<>();
         private final ChildEntity child;
         private final RecyclerView recyclerView;
+        /** 此刻绑在屏幕上的卡片：beaconId → ViewHolder */
+        final Map<Long, BeaconVH> bound = new HashMap<>();
 
         BeaconAdapter(ChildEntity child, RecyclerView recyclerView) {
             this.child = child;
@@ -873,6 +1114,7 @@ public class BeaconManagerActivity extends AppCompatActivity {
 
         void setData(List<BeaconEntity> data) {
             items.clear();
+            bound.clear();
             if (data != null) items.addAll(data);
             notifyDataSetChanged();
         }
@@ -909,6 +1151,26 @@ public class BeaconManagerActivity extends AppCompatActivity {
         }
 
         @Override
+        public void onViewRecycled(@NonNull RecyclerView.ViewHolder holder) {
+            if (holder instanceof BeaconVH) {
+                ((BeaconVH) holder).unbind();
+            }
+            super.onViewRecycled(holder);
+        }
+
+        /**
+         * 按最新信号重画这一组里所有「正挂在屏幕上」的卡片。
+         *
+         * 只碰已经绑定的那几个 ViewHolder，不走 notifyDataSetChanged ——
+         * 后者每秒来一次会不停重绑、重放入场动画，卡片看着像在闪。
+         */
+        void refreshLive(long now) {
+            for (BeaconVH vh : bound.values()) {
+                vh.applyLive(now);
+            }
+        }
+
+        @Override
         public int getItemCount() {
             return items.size() + 1; // + 占位格
         }
@@ -919,6 +1181,9 @@ public class BeaconManagerActivity extends AppCompatActivity {
             final ImageView ivDrag;
             final TextView txtName;
             final TextView txtTag;
+
+            /** 这张卡片现在代表哪颗信标（回收复用会换人） */
+            long beaconId = -1;
 
             // 手势状态（每个 ViewHolder 自持，回收复用自动重置）
             float downX, downY;
@@ -944,16 +1209,63 @@ public class BeaconManagerActivity extends AppCompatActivity {
                 card.setStrokeWidth(dp(2));
                 card.setStrokeColor(ContextCompat.getColor(BeaconManagerActivity.this,
                         R.color.transparent));
-                miniCircle.setBackgroundResource(R.drawable.bg_circle_mini_gray);
 
                 txtName.setText(b.getName());
                 txtName.setTextColor(ContextCompat.getColor(BeaconManagerActivity.this,
                         R.color.text_primary));
 
-                // 第二行原来放信标的场景标签，现在标签去掉了，直接不显示
-                txtTag.setVisibility(View.GONE);
+                // 第二行原来是场景标签，标签去掉了之后改放实时状态：连上就是绿的信号 + 距离
+                beaconId = b.getId();
+                bound.put(beaconId, this);
+                applyLive(System.currentTimeMillis());
 
                 attachGestures();
+            }
+
+            /** 卡片被回收 / 换了主人：从刷新表里摘掉，免得往旧卡片上写状态 */
+            void unbind() {
+                if (beaconId > 0) bound.remove(beaconId);
+                beaconId = -1;
+            }
+
+            /**
+             * 按这颗信标的最新信号重画圆点和第二行字。
+             *
+             * 连上（5 秒内收到过广播）：圆点绿 + 「-62 dBm · 约 1.2 米」
+             * 没连上：圆点灰 + 「未连接」
+             *
+             * 距离做显示迟滞：同一档（1 米内 / 10 米内 / 10 米外）里抖动小于 0.3 米就不重写，
+             * RSSI 每包差个 2~3dB 是常态，不压一下数字会一直跳。
+             */
+            void applyLive(long now) {
+                if (beaconId <= 0) return;
+                Live live = liveById.get(beaconId);
+                boolean connected = live != null && now - live.at <= LIVE_STALE_MS;
+
+                if (!connected) {
+                    miniCircle.setBackgroundResource(R.drawable.bg_circle_mini_gray);
+                    txtTag.setVisibility(View.VISIBLE);
+                    txtTag.setTextColor(ContextCompat.getColor(BeaconManagerActivity.this,
+                            R.color.text_secondary));
+                    txtTag.setText(R.string.beacon_offline);
+                    if (live != null) live.shownDistance = -1;
+                    return;
+                }
+
+                miniCircle.setBackgroundResource(R.drawable.bg_circle_mini_green);
+                txtTag.setVisibility(View.VISIBLE);
+                txtTag.setTextColor(ContextCompat.getColor(BeaconManagerActivity.this,
+                        R.color.primary));
+
+                String rssiText = getString(R.string.rssi_value, live.rssi);
+                boolean refresh = live.shownDistance < 0
+                        || DistanceText.bucketOf(live.distance) != DistanceText.bucketOf(live.shownDistance)
+                        || Math.abs(live.distance - live.shownDistance) >= 0.3;
+                if (refresh) {
+                    live.shownDistance = live.distance;
+                    txtTag.setText(getString(R.string.beacon_live_fmt, rssiText,
+                            DistanceText.format(BeaconManagerActivity.this, live.distance)));
+                }
             }
 
             /**

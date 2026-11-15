@@ -24,6 +24,9 @@
     <!-- Beacon manager -->
     <string name="beacon_manager_title">接娃信息</string>
     <string name="beacon_manager_hint">按娃分组。点分组头折叠 / 长按改名，点卡片看信息</string>
+    <!-- 卡片第二行：连上了显示「-62 dBm · 约 1.2 米」，连不上显示「未连接」 -->
+    <string name="beacon_live_fmt">%1$s · %2$s</string>
+    <string name="beacon_offline">未连接</string>
     <string name="add_beacon_hint">扫描或扫码</string>
     <string name="add_to_child">归到%s</string>
     <string name="beacon_empty_add_hint">扫描附近信标，或用二维码导入</string>

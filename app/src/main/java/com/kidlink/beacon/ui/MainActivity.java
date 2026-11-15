@@ -1378,19 +1378,12 @@ public class MainActivity extends AppCompatActivity {
 
     /** 距离显示分档，用于判断要不要重绘 */
     private int bucketOf(double d) {
-        if (d < 1.0) return 0;
-        if (d < 10.0) return 1;
-        return 2;
+        return DistanceText.bucketOf(d);
     }
 
-    /**
-     * RSSI 换算出来的距离，1 米以内本来就没有分辨率可言（±5dB 噪声 ≈ ±0.5 米），
-     * 所以贴着信标时给「1 米内」，而不是编一个 0.1 米出来。
-     */
+    /** 接娃信息页的卡片也用同一套文案，实现在 DistanceText */
     private String formatDistance(double d) {
-        if (d < 1.0) return getString(R.string.distance_near);
-        if (d < 10.0) return getString(R.string.distance_approx, d);
-        return getString(R.string.distance_far, Math.round(d));
+        return DistanceText.format(this, d);
     }
 
     private void setStateText(Panel p, String text, int colorRes) {
