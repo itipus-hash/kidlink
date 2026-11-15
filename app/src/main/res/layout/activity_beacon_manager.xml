@@ -184,7 +184,8 @@
                     android:textColor="@color/text_secondary"
                     android:textSize="12sp" />
 
-                <!-- 单独一行、单独可点：点这里弹「为什么只支持 iBeacon」，点别处去淘宝 -->
+                <!-- 单独一行、单独可点：点这里弹「为什么推荐买同款」，点别处去淘宝 -->
+                <!-- 文案刻意压成一行：以前写成「· 点这里看为什么」，会在「点这里 / 看为什么」处折行 -->
                 <TextView
                     android:id="@+id/txt_buy_proto"
                     android:layout_width="match_parent"
