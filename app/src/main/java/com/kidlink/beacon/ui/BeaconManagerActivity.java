@@ -81,7 +81,7 @@ public class BeaconManagerActivity extends AppCompatActivity {
      * 放在这里而不是首页：用户「手里没硬件」这件事，是在信标管理页发现的 ——
      * 进来一看是空的，这时候顺手给型号最合适。
      */
-    private static final String SHOP_URL = "https://m.tb.cn/h.j9RiIck";
+    private static final String SHOP_URL = "https://m.tb.cn/h.jlD0sX1";
 
     private BeaconDbHelper dbHelper;
     /** 所有分组的容器，每次 reload 全量重建 */
@@ -93,6 +93,8 @@ public class BeaconManagerActivity extends AppCompatActivity {
     private View layoutBuyTip;
     /** 还没有娃时的整块入口：新建一个娃 */
     private View layoutEmptyAdd;
+    /** 底部「购买信标」（已经有信标时才出现，大推荐块同时就不显示了） */
+    private View btnBuyBeacon;
     /** children.id → 娃名 */
     private final Map<Long, String> childNames = new HashMap<>();
     /** 当前打开的信标信息弹窗 —— 点「所属娃 / 场景标签」前要先关掉，免得弹窗叠弹窗 */
@@ -143,13 +145,15 @@ public class BeaconManagerActivity extends AppCompatActivity {
         scrollGroups = findViewById(R.id.scroll_groups);
         btnNewChild = findViewById(R.id.btn_new_child);
         btnNewChild.setOnClickListener(v -> askNewChild(null));
+        btnBuyBeacon = findViewById(R.id.btn_buy_beacon);
+        btnBuyBeacon.setOnClickListener(v -> copyShopLink());
         layoutEmptyAdd = findViewById(R.id.layout_empty_add);
         // 这块只在「一个娃都没有」时出现，点了就是建娃
         layoutEmptyAdd.setOnClickListener(v -> askNewChild(null));
 
         // 空状态里的购买建议：整块可点去淘宝，内层那行单独可点看协议说明
         layoutBuyTip = findViewById(R.id.layout_buy_tip);
-        layoutBuyTip.setOnClickListener(v -> openShop());
+        layoutBuyTip.setOnClickListener(v -> copyShopLink());
         findViewById(R.id.txt_buy_proto).setOnClickListener(v -> showProtocolDialog());
 
         requestPermissions();
@@ -226,7 +230,10 @@ public class BeaconManagerActivity extends AppCompatActivity {
         layoutEmptyAdd.setVisibility(noChild ? View.VISIBLE : View.GONE);
         // 已经有娃了才在底部再给一个「新建一个娃」；没有娃时上面那块就是它，别重复
         btnNewChild.setVisibility(noChild ? View.GONE : View.VISIBLE);
-        layoutBuyTip.setVisibility(all.isEmpty() ? View.VISIBLE : View.GONE);
+        // 已经有信标了 → 大推荐块收起来，改在「新建一个娃」右边挂一个「购买信标」
+        final boolean hasBeacon = !all.isEmpty();
+        layoutBuyTip.setVisibility(hasBeacon ? View.GONE : View.VISIBLE);
+        btnBuyBeacon.setVisibility(hasBeacon && !noChild ? View.VISIBLE : View.GONE);
 
         if (scrollGroups != null) {
             scrollGroups.post(() -> scrollGroups.scrollTo(0, scrollY));
@@ -343,12 +350,21 @@ public class BeaconManagerActivity extends AppCompatActivity {
         return row;
     }
 
-    private void openShop() {
-        try {
-            startActivity(new Intent(Intent.ACTION_VIEW, android.net.Uri.parse(SHOP_URL)));
-        } catch (Exception e) {
-            Feedback.show(this, R.string.open_shop_failed);
+    /**
+     * 复制淘宝链接，而不是直接跳浏览器。
+     *
+     * 手机上「打开链接」十有八九落到浏览器里的淘宝网页版，登录、加购都别扭；
+     * 复制到剪贴板之后用户在淘宝 App 里粘贴，能直接落到商品页（还能拿到淘口令的返利）。
+     * 所以这里只做两件事：写剪贴板 + 提示一句「去淘宝粘贴」。
+     */
+    private void copyShopLink() {
+        android.content.ClipboardManager cm =
+                (android.content.ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+        if (cm != null) {
+            cm.setPrimaryClip(android.content.ClipData.newPlainText(
+                    getString(R.string.buy_beacon_short), SHOP_URL));
         }
+        Feedback.show(this, R.string.buy_link_copied, true);
     }
 
     /** 「为什么只支持 iBeacon」：买错硬件的代价比读一段字大，所以写在界面上 */
