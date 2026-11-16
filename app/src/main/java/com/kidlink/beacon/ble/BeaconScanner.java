@@ -556,8 +556,14 @@ public class BeaconScanner {
             // 电量和识别帧是「交替广播」的两种包：这条广播多半是 iBeacon，
             // 但没开 iBeacon 的那几条里可能带着 TLM 遥测。先顺手解一下 TLM ——
             // 解不出就是一次字节遍历的开销，解出来就把电量交给 BatteryStore 落内存/落库。
-            TlmData tlm = TlmParser.parse(scanData);
+            //
+            // 字节序按 MAC 认人：之前学过就直接用，没学过就现场判、判得毫无歧义时把
+            // 结论存下来（TlmEndian）。不这样的话，电压漂到 3.07 V 那个歧义窗口里
+            // 会被随机读成 2828 mV，把「充足」报成「偏低」。
+            Boolean knownLittle = mac != null ? TlmEndian.get(context, mac) : null;
+            TlmData tlm = TlmParser.parse(scanData, knownLittle);
             if (tlm != null && mac != null) {
+                if (tlm.endianCertain) TlmEndian.remember(context, mac, tlm.littleEndian);
                 if (com.kidlink.beacon.BuildConfig.DEBUG) {
                     Log.d(TAG, "TLM " + mac + " " + tlm);
                 }

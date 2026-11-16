@@ -16,15 +16,30 @@ public class TlmData {
     public final long advCount;
     /** 开机以来的运行时间（秒，0.1 s 精度换算而来） */
     public final long uptimeSec;
+    /** 这帧是按小端解的（true）还是大端解的（false） */
+    public final boolean littleEndian;
+    /**
+     * 字节序这个结论有没有硬证据。
+     * true 表示可以拿去做「按 MAC 记住方向」的依据（见 {@link TlmEndian}）；
+     * false 表示两个方向都说得通或者都不像，只是临时挑了一个。
+     */
+    public final boolean endianCertain;
 
     /** 信标说温度不支持时的固定值（8.8 定点 -128 °C） */
     public static final float TEMP_UNSUPPORTED = Float.NaN;
 
     public TlmData(int voltageMv, float tempC, long advCount, long uptimeSec) {
+        this(voltageMv, tempC, advCount, uptimeSec, true, false);
+    }
+
+    public TlmData(int voltageMv, float tempC, long advCount, long uptimeSec,
+                   boolean littleEndian, boolean endianCertain) {
         this.voltageMv = voltageMv;
         this.tempC = tempC;
         this.advCount = advCount;
         this.uptimeSec = uptimeSec;
+        this.littleEndian = littleEndian;
+        this.endianCertain = endianCertain;
     }
 
     /** 有没有可用的电压读数 */
@@ -36,6 +51,9 @@ public class TlmData {
     public String toString() {
         return "TlmData{" + voltageMv + "mV, temp="
                 + (Float.isNaN(tempC) ? "n/a" : String.format(java.util.Locale.US, "%.2f", tempC))
-                + ", adv=" + advCount + ", uptime=" + uptimeSec + "s}";
+                + ", adv=" + advCount + ", uptime=" + uptimeSec + "s"
+                + ", " + (littleEndian ? "LE" : "BE")
+                + (endianCertain ? "" : "?")
+                + "}";
     }
 }

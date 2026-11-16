@@ -20,10 +20,17 @@ package com.kidlink.beacon.ble;
  * 运行时间写成了**小端**（温度倒是老实按大端写的）—— 和厂商 App 的
  * `getByteInt()`（从高索引往低索引拼字节）对得上，已现场对拍验证。
  * 为了两种设备都能读，这里不写死方向，而是**按数值合理性现场判定**：
- * 电压必须落在 {@link #VOLTAGE_MIN_MV}~{@link #VOLTAGE_MAX_MV} 之间，
+ * 电压必须落在 {@link #VOLTAGE_MIN_MV}~{@link #VOLTAGE_MAX_MV}（2700~3400 mV）之间，
  * 两个方向只有一个说得通时就用说得通的（字节读反几乎只会把值放大 256 倍，
  * 3068 mV 读反就是 64523 mV，一眼假）；两个都说得通或都说不通时，
  * 优先小端（现场的 DX 固件），否则取小的那个。判定结果再套给计数和运行时间。
+ *
+ * 现场判 + 这个区间其实已经很难判错：要让两个方向同时落在 2700~3400，需要
+ * 高字节 ∈ 0x0A~0x0D、同时低字节 ∈ 0x8C~0xFF ∪ 0x00~0x48，两者不可能同时成立，
+ * 所以正常帧一定是「只有一个方向合理」。即便如此，判定有硬证据时仍会返回
+ * {@code endianCertain=true}，由调用方按 MAC 记住方向（{@link TlmEndian}），
+ * 下一帧起走 {@link #parse(byte[], Boolean)} 的指定方向分支 —— 电压掉出有效区间
+ * 的帧（电池快没电、屏蔽室里的偶发读数）就不会再翻来覆去地改判。
  *
  * 整条 AD 结构的长度字节这里是 0x17（23），载荷比标准的 14 字节多几个厂商字节，
  * 我们只取前面标准的 14 个。
@@ -54,9 +61,12 @@ public final class TlmParser {
     /** 载荷 14 字节：帧类型(1) + 版本(1) + 电压(2) + 温度(2) + 计数(4) + 秒数(4) */
     private static final int TLM_PAYLOAD_LENGTH = 14;
 
-    /** 电压合理区间（mV）：低于 1.2 V 电池已报废，高于 4.2 V 不存在这种电池 */
-    private static final int VOLTAGE_MIN_MV = 1200;
-    private static final int VOLTAGE_MAX_MV = 4200;
+    /**
+     * 电压有效区间（mV），用户给的现场口径：**2700~3400 才算有效读数**。
+     * 落在区间外的（比如 1.9 V 的纽扣电池、或读反了的 64 V）一律不当证据。
+     */
+    private static final int VOLTAGE_MIN_MV = 2700;
+    private static final int VOLTAGE_MAX_MV = 3400;
     /** 温度合理区间（℃）：芯片自己都到不了 -40 以下、125 以上 */
     private static final float TEMP_MIN_C = -40f;
     private static final float TEMP_MAX_C = 125f;
@@ -66,11 +76,24 @@ public final class TlmParser {
     private TlmParser() {}
 
     /**
-     * 从完整广播数据里找 TLM 帧。
+     * 从完整广播数据里找 TLM 帧（不知道这颗信标用哪端，靠数值现场判）。
      *
      * @return 解出来的遥测数据；这条广播里没有明文 TLM 时返回 null
      */
     public static TlmData parse(byte[] scanData) {
+        return parse(scanData, null);
+    }
+
+    /**
+     * 同上，但可以指定这颗信标已经学到的字节序。
+     *
+     * @param forcedLittle 之前判定的方向（{@link TlmEndian}）；null = 还没学到，现场判。
+     *                     给了值就优先用它 —— 电压落在「两端都合理」的窗口里时，
+     *                     现场判会随机挑一个，差 200 多毫伏就可能报错电量档位。
+     *                     只有发现这个方向读出荒谬电压、另一个方向才合理时（换固件了）
+     *                     才会推翻它，并把 {@code endianCertain} 置真让调用方更新缓存。
+     */
+    public static TlmData parse(byte[] scanData, Boolean forcedLittle) {
         if (scanData == null || scanData.length < 4) return null;
 
         int offset = 0;
@@ -86,7 +109,7 @@ public final class TlmParser {
                 if (isEddystoneUuid(uuidLo, uuidHi)) {
                     int frameType = scanData[offset + 4] & 0xFF;
                     if (frameType == FRAME_TYPE_TLM) {
-                        TlmData data = parsePayload(scanData, offset + 4);
+                        TlmData data = parsePayload(scanData, offset + 4, forcedLittle);
                         if (data != null) return data;
                     }
                     // 0x21：加密 TLM，跳过（见类头说明）
@@ -132,7 +155,7 @@ public final class TlmParser {
         return false;
     }
 
-    private static TlmData parsePayload(byte[] data, int start) {
+    private static TlmData parsePayload(byte[] data, int start, Boolean forcedLittle) {
         // start 指向帧类型字节，后面还需要 13 个字节
         if (start < 0 || start + TLM_PAYLOAD_LENGTH > data.length) return null;
 
@@ -148,29 +171,45 @@ public final class TlmParser {
         int b1 = data[start + 3] & 0xFF;
         int voltageBe = (b0 << 8) | b1;
         int voltageLe = b0 | (b1 << 8);
+        boolean beOk = isPlausibleVoltage(voltageBe);
+        boolean leOk = isPlausibleVoltage(voltageLe);
 
         long upBe = readU32(data, start + 10, false);
         long upLe = readU32(data, start + 10, true);
+        boolean upBeOk = upBe <= MAX_UPTIME_TENTHS;
+        boolean upLeOk = upLe <= MAX_UPTIME_TENTHS;
 
-        // 整帧整数是不是小端写的
+        // 整帧整数是不是小端写的；certain = 这个结论有没有硬证据（可以放心存下来）
         boolean little;
-        if (voltageBe == 0 && voltageLe == 0) {
-            // 信标自己说「不支持电压」，只能拿运行时间反推方向
-            little = betterLittle(upBe <= MAX_UPTIME_TENTHS, upLe <= MAX_UPTIME_TENTHS, upBe, upLe);
-        } else {
-            boolean beOk = voltageBe >= VOLTAGE_MIN_MV && voltageBe <= VOLTAGE_MAX_MV;
-            boolean leOk = voltageLe >= VOLTAGE_MIN_MV && voltageLe <= VOLTAGE_MAX_MV;
-            if (beOk && !leOk) {
-                little = false;
-            } else if (leOk && !beOk) {
-                little = true;
-            } else if (beOk) {
-                // 两个方向都说得通（0x0B0C / 0x0C0B 这种），现场固件是小端，优先小端
-                little = true;
-            } else {
-                // 两个都不合理，取小的 —— 字节读反几乎只会把值放大 256 倍
-                little = voltageLe <= voltageBe;
+        boolean certain;
+
+        if (forcedLittle != null) {
+            // 这颗信标之前学过方向，直接用 —— 电压落在「两端都合理」的窗口里时，
+            // 现场判会挑错边，差 200 多毫伏正好能把电量档位判反。
+            little = forcedLittle;
+            certain = true;
+            boolean chosenOk = little ? leOk : beOk;
+            boolean otherOk = little ? beOk : leOk;
+            if (!chosenOk && otherOk) {
+                // 学到的方向读出荒谬电压、另一方向才合理 → 换了固件，推翻重学
+                little = !little;
+                certain = true;
             }
+        } else if (voltageBe == 0 && voltageLe == 0) {
+            // 信标自己说「不支持电压」，只能拿运行时间反推方向
+            little = betterLittle(upBeOk, upLeOk, upBe, upLe);
+            certain = upBeOk != upLeOk;
+        } else if (beOk != leOk) {
+            little = leOk;               // 只有一个方向说得通，铁证
+            certain = true;
+        } else if (beOk) {
+            // 两端都说得通（`0C 0B` 这种），先按现场固件取小端，但不算定论、不落盘
+            little = true;
+            certain = voltageBe == voltageLe;
+        } else {
+            // 两个都不合理，取小的 —— 字节读反几乎只会把值放大 256 倍
+            little = voltageLe <= voltageBe;
+            certain = false;
         }
 
         int voltage = little ? voltageLe : voltageBe;
@@ -183,13 +222,19 @@ public final class TlmParser {
             long other = readU32(data, start + 10, !little);
             if (other <= MAX_UPTIME_TENTHS) {
                 little = !little;
+                certain = true;
                 voltage = little ? voltageLe : voltageBe;
                 adv = readU32(data, start + 6, little);
                 secTenths = other;
             }
         }
 
-        return new TlmData(voltage, parseTemp(data, start), adv, secTenths / 10);
+        return new TlmData(voltage, parseTemp(data, start), adv, secTenths / 10,
+                little, certain);
+    }
+
+    private static boolean isPlausibleVoltage(int mv) {
+        return mv >= VOLTAGE_MIN_MV && mv <= VOLTAGE_MAX_MV;
     }
 
     /**
