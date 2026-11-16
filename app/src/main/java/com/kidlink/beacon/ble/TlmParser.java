@@ -9,13 +9,22 @@ package com.kidlink.beacon.ble;
  * <pre>
  *   [0]    帧类型   0x20 = 明文 TLM（0x21 = 加密 TLM，读不了）
  *   [1]    版本     0x00
- *   [2..3] 电压     **小端**，1 mV/bit；0x0000 = 不支持
- *   [4..5] 温度     8.8 定点，**小端**，0x8000 = 不支持
- *   [6..9] 广播计数 **小端**
- *   [10..13] 运行秒数 ×0.1 s，**小端**
+ *   [2..3] 电压     1 mV/bit；0x0000 = 不支持
+ *   [4..5] 温度     8.8 定点；0x8000 = 不支持
+ *   [6..9] 广播计数
+ *   [10..13] 运行秒数 ×0.1 s
  * </pre>
- * 标准 Eddystone 规定是大端，但这批 DX 固件（DA14531）实际用小端，
- * 和厂商 App 的 `getByteInt()`（从高索引向低索引拼字节）一致，已现场对拍验证。
+ *
+ * ## 字节序：标准和现场固件不一样，两端都认
+ * Eddystone 规范写的是**全大端**，但手上这批 DX 固件（DA14531）把电压、计数、
+ * 运行时间写成了**小端**（温度倒是老实按大端写的）—— 和厂商 App 的
+ * `getByteInt()`（从高索引往低索引拼字节）对得上，已现场对拍验证。
+ * 为了两种设备都能读，这里不写死方向，而是**按数值合理性现场判定**：
+ * 电压必须落在 {@link #VOLTAGE_MIN_MV}~{@link #VOLTAGE_MAX_MV} 之间，
+ * 两个方向只有一个说得通时就用说得通的（字节读反几乎只会把值放大 256 倍，
+ * 3068 mV 读反就是 64523 mV，一眼假）；两个都说得通或都说不通时，
+ * 优先小端（现场的 DX 固件），否则取小的那个。判定结果再套给计数和运行时间。
+ *
  * 整条 AD 结构的长度字节这里是 0x17（23），载荷比标准的 14 字节多几个厂商字节，
  * 我们只取前面标准的 14 个。
  *
@@ -44,6 +53,15 @@ public final class TlmParser {
 
     /** 载荷 14 字节：帧类型(1) + 版本(1) + 电压(2) + 温度(2) + 计数(4) + 秒数(4) */
     private static final int TLM_PAYLOAD_LENGTH = 14;
+
+    /** 电压合理区间（mV）：低于 1.2 V 电池已报废，高于 4.2 V 不存在这种电池 */
+    private static final int VOLTAGE_MIN_MV = 1200;
+    private static final int VOLTAGE_MAX_MV = 4200;
+    /** 温度合理区间（℃）：芯片自己都到不了 -40 以下、125 以上 */
+    private static final float TEMP_MIN_C = -40f;
+    private static final float TEMP_MAX_C = 125f;
+    /** 运行时间上限（0.1 s 单位）：5 年。超过就是字节序读反了 */
+    private static final long MAX_UPTIME_TENTHS = 5L * 365 * 24 * 3600 * 10;
 
     private TlmParser() {}
 
@@ -122,25 +140,94 @@ public final class TlmParser {
         //   17 16 | AA FE | 20 00 | 03 0C | 1D 00 | E5 06 00 00 | 1C 05 00 00 | 00 05 00 06 C7
         //           uuid    帧/版本  电压     温度     adv 计数       运行 130.8s    major/minor/tx
         //
-        // 电压 `03 0C` 必须按**小端**读 → 0x0C03 = 3075 mV（厂商 App 同时显示 3068~3075）
-        // 温度 `1D 00` 必须按**大端**读 → 0x1D00 / 256 = 29.0℃（8.8 定点，整数部分在高字节）
-        //
-        // 也就是说：标准 Eddystone 说全大端，这批 DX 固件除了温度以外全写成了小端。
-        // 早期按全大端解，电压会变成 0xFF0B = 65291 mV 那种一眼假的值。
-        int voltage = (data[start + 2] & 0xFF) | ((data[start + 3] & 0xFF) << 8);
-        int rawTemp = ((data[start + 4] & 0xFF) << 8) | (data[start + 5] & 0xFF);
-        float temp = rawTemp == 0x8000 ? TlmData.TEMP_UNSUPPORTED : rawTemp / 256f;
+        // 这颗是小端设备：电压 `03 0C` 按小端读 → 0x0C03 = 3075 mV（厂商 App 同时显示 3068~3075）；
+        // 按大端读是 0x030C = 780 mV，连电池的最低电压都够不上，一眼假 —— 判方向的依据就是它。
+        // 标准 Eddystone 设备正好反过来（大端），所以下面先判方向、再套给各字段。
 
-        long adv = (data[start + 6] & 0xFFL)
-                | ((data[start + 7] & 0xFFL) << 8)
-                | ((data[start + 8] & 0xFFL) << 16)
-                | ((data[start + 9] & 0xFFL) << 24);
+        int b0 = data[start + 2] & 0xFF;
+        int b1 = data[start + 3] & 0xFF;
+        int voltageBe = (b0 << 8) | b1;
+        int voltageLe = b0 | (b1 << 8);
 
-        long secTenths = (data[start + 10] & 0xFFL)
-                | ((data[start + 11] & 0xFFL) << 8)
-                | ((data[start + 12] & 0xFFL) << 16)
-                | ((data[start + 13] & 0xFFL) << 24);
+        long upBe = readU32(data, start + 10, false);
+        long upLe = readU32(data, start + 10, true);
 
-        return new TlmData(voltage, temp, adv, secTenths / 10);
+        // 整帧整数是不是小端写的
+        boolean little;
+        if (voltageBe == 0 && voltageLe == 0) {
+            // 信标自己说「不支持电压」，只能拿运行时间反推方向
+            little = betterLittle(upBe <= MAX_UPTIME_TENTHS, upLe <= MAX_UPTIME_TENTHS, upBe, upLe);
+        } else {
+            boolean beOk = voltageBe >= VOLTAGE_MIN_MV && voltageBe <= VOLTAGE_MAX_MV;
+            boolean leOk = voltageLe >= VOLTAGE_MIN_MV && voltageLe <= VOLTAGE_MAX_MV;
+            if (beOk && !leOk) {
+                little = false;
+            } else if (leOk && !beOk) {
+                little = true;
+            } else if (beOk) {
+                // 两个方向都说得通（0x0B0C / 0x0C0B 这种），现场固件是小端，优先小端
+                little = true;
+            } else {
+                // 两个都不合理，取小的 —— 字节读反几乎只会把值放大 256 倍
+                little = voltageLe <= voltageBe;
+            }
+        }
+
+        int voltage = little ? voltageLe : voltageBe;
+        long adv = readU32(data, start + 6, little);
+        long secTenths = readU32(data, start + 10, little);
+
+        // 计数和运行时间跟电压共用同一个方向判定，但 4 字节字段读反几乎必然爆表，
+        // 爆了说明电压那边的判定在这帧上没站住，能换就换回来
+        if (secTenths > MAX_UPTIME_TENTHS) {
+            long other = readU32(data, start + 10, !little);
+            if (other <= MAX_UPTIME_TENTHS) {
+                little = !little;
+                voltage = little ? voltageLe : voltageBe;
+                adv = readU32(data, start + 6, little);
+                secTenths = other;
+            }
+        }
+
+        return new TlmData(voltage, parseTemp(data, start), adv, secTenths / 10);
+    }
+
+    /**
+     * 温度：8.8 定点（高字节整数、低字节小数，有符号）。
+     * 标准和 DX 固件在这两个字节上都是大端，所以默认大端，
+     * 只有大端读出个不可能的数值（-40 ℃ 以下 / 125 ℃ 以上）时才反过来试小端。
+     */
+    private static float parseTemp(byte[] data, int start) {
+        int rawBe = ((data[start + 4] & 0xFF) << 8) | (data[start + 5] & 0xFF);
+        int rawLe = (data[start + 4] & 0xFF) | ((data[start + 5] & 0xFF) << 8);
+        if (rawBe == 0x8000 || rawLe == 0x8000) return TlmData.TEMP_UNSUPPORTED;   // -128 ℃ = 不支持
+
+        float tBe = (short) rawBe / 256f;
+        if (tBe >= TEMP_MIN_C && tBe <= TEMP_MAX_C) return tBe;
+
+        float tLe = (short) rawLe / 256f;
+        if (tLe >= TEMP_MIN_C && tLe <= TEMP_MAX_C) return tLe;
+        return tBe;
+    }
+
+    /** 小端/大端两种拼法，按给定的偏移读一个 32 位无符号整数 */
+    private static long readU32(byte[] data, int at, boolean little) {
+        if (little) {
+            return (data[at] & 0xFFL)
+                    | ((data[at + 1] & 0xFFL) << 8)
+                    | ((data[at + 2] & 0xFFL) << 16)
+                    | ((data[at + 3] & 0xFFL) << 24);
+        }
+        return ((data[at] & 0xFFL) << 24)
+                | ((data[at + 1] & 0xFFL) << 16)
+                | ((data[at + 2] & 0xFFL) << 8)
+                | (data[at + 3] & 0xFFL);
+    }
+
+    /** 两个方向都没有硬性证据时怎么选：一个合理一个不合理听合理的，否则取小的 */
+    private static boolean betterLittle(boolean beOk, boolean leOk, long be, long le) {
+        if (leOk != beOk) return leOk;
+        if (leOk) return true;          // 都合理 → 现场固件是小端
+        return le <= be;
     }
 }
