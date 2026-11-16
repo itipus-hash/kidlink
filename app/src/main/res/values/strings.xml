@@ -81,6 +81,37 @@
     <string name="info_push_state">上次推送 / 推送冷却</string>
     <string name="info_last_push_none">从未推送</string>
     <string name="info_cooldown_ready">不在冷却中</string>
+
+    <!-- 电量（来自 Eddystone-TLM） -->
+    <string name="info_battery">电量</string>
+    <string name="menu_read_battery">读取电量</string>
+    <string name="battery_reading_all_fmt">正在读取电量 %1$d/%2$d…</string>
+    <string name="battery_read_all_done_fmt">读到 %1$d 颗 · 没读到 %2$d 颗</string>
+    <string name="battery_read_all_none">还没有带蓝牙地址的信标</string>
+    <string name="battery_none_short">无TLM</string>
+    <!--
+        推荐 6000ms：这颗信标的 iBeacon 和 TLM 是轮流占同一个射频的，
+        TLM 发得越勤，iBeacon 被挤得越稀，直接影响「到校检测」的延迟。
+        电量本身一小时才变几毫伏，6 秒一次完全够用；
+        Eddystone 规范本身建议 TLM ≥ 10 秒，6000ms 已经是偏向及时性的取值。
+    -->
+    <!--
+        %1$d = 推荐间隔，按品牌给（见 BeaconBrand）：
+        龙雀（UUID 前缀 + company 0x4458 都对上）1500ms，其他 6000ms。
+    -->
+    <string name="battery_none">无 TLM 信息（推荐 %1$dms）</string>
+<!-- 单位小写 v 紧跟数字：3.070v。数字由 formatVolts() 出三位小数（毫伏精度） -->
+    <string name="battery_ok_fmt">%1$sv · 充足（%2$s读取）</string>
+    <string name="battery_mid_fmt">%1$sv · 一般（%2$s读取）</string>
+    <string name="battery_low_fmt">%1$sv · 偏低，建议换电池</string>
+    <string name="battery_age_just_now">刚刚</string>
+    <string name="battery_age_min_fmt">约 %1$d 分钟前</string>
+    <string name="battery_age_hour_fmt">约 %1$d 小时前</string>
+    <string name="battery_age_day_fmt">约 %1$d 天前</string>
+    <string name="battery_pct_fmt">%1$d%%（%2$s读取）</string>
+    <string name="battery_reading">正在读取电量…</string>
+    <string name="battery_read_failed">没读到电量：这颗信标没有电量特征值</string>
+    <string name="battery_no_mac">这颗信标没有蓝牙地址，读不到电量（重新扫一次添加即可补上）</string>
     <string name="info_cooldown_left">还剩 %s</string>
     <string name="info_clear_cooldown">清除冷却</string>
     <string name="cooldown_reset_done">「%s」的推送冷却已清除</string>

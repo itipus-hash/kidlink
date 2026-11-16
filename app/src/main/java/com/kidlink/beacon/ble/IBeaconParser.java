@@ -135,8 +135,8 @@ public class IBeaconParser {
         if (scanData == null || scanData.length < 2) return "空广播";
 
         int offset = 0;
-        boolean sawApple = false;
-        String appleDetail = null;
+        boolean sawManufacturer = false;
+        String detail = null;
 
         while (offset + 1 < scanData.length) {
             int length = scanData[offset] & 0xFF;
@@ -147,31 +147,37 @@ public class IBeaconParser {
             int type = scanData[offset + 1] & 0xFF;
 
             if (type == 0xFF && length >= 4) {
+                sawManufacturer = true;
+                // 这里**不能**只判 Apple 0x004C：DX 等厂商把 Company ID 写成自己的
+                // （0x4458 = "DX"），帧结构却是标准 iBeacon。只认 Apple ID 会让这类
+                // 自家信标在「原始广播」里被判成「不是 iBeacon」，非常误导。
                 int companyId = ((scanData[offset + 3] & 0xFF) << 8) | (scanData[offset + 2] & 0xFF);
-                if (companyId == APPLE_COMPANY_ID) {
-                    sawApple = true;
-                    if (length >= MIN_MANUFACTURER_AD_LENGTH && offset + 6 < scanData.length) {
-                        int subType = scanData[offset + 4] & 0xFF;
-                        int subLength = scanData[offset + 5] & 0xFF;
-                        if (subType == IBEACON_SUB_TYPE && subLength == IBEACON_SUB_LENGTH) {
-                            IBeaconData d = parse(scanData, -60);
-                            return d == null
-                                    ? "iBeacon 帧头正常，但 payload 解析失败"
-                                    : "iBeacon ✓ " + d.uuid + "  " + d.major + "/" + d.minor;
-                        }
-                        appleDetail = String.format(
-                                "Apple 厂商数据，但帧头是 %02X %02X（标准应为 02 15）",
-                                subType, subLength);
-                    } else {
-                        appleDetail = String.format(
-                                "Apple 厂商数据，长度字节 %02X 偏短（标准应为 1A）", length);
+                if (length >= MIN_MANUFACTURER_AD_LENGTH && offset + 6 < scanData.length) {
+                    int subType = scanData[offset + 4] & 0xFF;
+                    int subLength = scanData[offset + 5] & 0xFF;
+                    if (subType == IBEACON_SUB_TYPE && subLength == IBEACON_SUB_LENGTH) {
+                        IBeaconData d = parse(scanData, -60);
+                        return d == null
+                                ? String.format("iBeacon 帧头正常（company %04X），但 payload 解析失败",
+                                        companyId)
+                                : String.format("iBeacon ✓ %s  %d/%d（company %04X）",
+                                        d.uuid, d.major, d.minor, companyId);
                     }
+                    if (detail == null) {
+                        detail = String.format(
+                                "厂商数据 company=%04X，但帧头是 %02X %02X（标准 iBeacon 应为 02 15）",
+                                companyId, subType, subLength);
+                    }
+                } else if (detail == null) {
+                    detail = String.format(
+                            "厂商数据 company=%04X，长度字节 %02X 偏短（标准 iBeacon 应为 1A）",
+                            companyId, length);
                 }
             }
             offset += (length + 1);
         }
 
-        if (sawApple) return appleDetail == null ? "Apple 厂商数据，结构异常" : appleDetail;
+        if (sawManufacturer) return detail == null ? "厂商数据结构异常" : detail;
         return "没有厂商自定义数据（FF），不是 iBeacon";
     }
 }

@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  电量充足：横向电池（外框 + 正极帽 + 快满的内芯）。
+  颜色不写死在这里 —— 代码里按档位套绿/黄/红（见 BeaconManagerActivity 的卡片绑定）。
+  横向画是为了跟后面那行小字占同一条水平基线，竖版在卡片左上角显得头重脚轻。
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="26dp"
+    android:height="14dp"
+    android:viewportWidth="26"
+    android:viewportHeight="14">
+
+    <!-- 电池外框 -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FF000000"
+        android:strokeWidth="1.5"
+        android:strokeLineJoin="round"
+        android:pathData="M3,3 H20 V11 H3 Z" />
+
+    <!-- 正极帽（外框右边那一小截） -->
+    <path
+        android:fillColor="#FF000000"
+        android:pathData="M21.5,5.5 H23.5 V8.5 H21.5 Z" />
+
+    <!-- 内芯：满 -->
+    <path
+        android:fillColor="#FF000000"
+        android:pathData="M5,5 H18 V9 H5 Z" />
+</vector>

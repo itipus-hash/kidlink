@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  电量偏低：同一个横向电池外框，内芯只剩最左边一小格。
+  颜色同样由代码套（偏低一律红），这里只用纯黑占位。
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="26dp"
+    android:height="14dp"
+    android:viewportWidth="26"
+    android:viewportHeight="14">
+
+    <!-- 电池外框 -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FF000000"
+        android:strokeWidth="1.5"
+        android:strokeLineJoin="round"
+        android:pathData="M3,3 H20 V11 H3 Z" />
+
+    <!-- 正极帽 -->
+    <path
+        android:fillColor="#FF000000"
+        android:pathData="M21.5,5.5 H23.5 V8.5 H21.5 Z" />
+
+    <!-- 内芯：只剩一小格 -->
+    <path
+        android:fillColor="#FF000000"
+        android:pathData="M5,5 H7.5 V9 H5 Z" />
+</vector>

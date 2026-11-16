@@ -16,7 +16,7 @@ import java.nio.charset.StandardCharsets;
  *
  * 打包的是设置页里除了「接娃人」以外的全部配置：
  * PushPlus 通道列表（不含开关状态）、推送冷却、接送成功推送距离、近距离推送距离、图标颜色超时时间、
- * 图标变色触发距离、震动时长、悬浮提醒触发距离。
+ * 图标变色触发距离、震动时长、悬浮提醒触发距离、不推送 WiFi 名单。
  *
  * 接娃人是「这台手机的持有人」的身份，换机同步没意义，故意不带。
  * 通道的开关也是：哪条通道在这台手机上开不开，是这台手机自己的选择，
@@ -30,8 +30,9 @@ public class SettingsQrCodec {
      * 配置格式版本。字段增删都要 +1 —— 收到不同版本的码直接拒绝，
      * 免得把对方的设置按自己的理解硬塞进来。
      * v8：推送通道不再带开关状态（开关是每台手机自己的事，同步过去会覆盖错）
+     * v9：带上「不推送 WiFi」名单 —— 家里几台手机连的都是同几个 WiFi，一起带走省得重配
      */
-    public static final int VERSION = 8;
+    public static final int VERSION = 9;
 
     private SettingsQrCodec() {}
 
@@ -49,6 +50,7 @@ public class SettingsQrCodec {
             json.put("nm", BeaconPrefs.getNearMeters(ctx));
             json.put("vs", BeaconPrefs.getVibrateNearSec(ctx));
             json.put("ft", BeaconPrefs.getFrontTipMeters(ctx));
+            json.put("wb", encodeWifiBlock(ctx));
 
             byte[] raw = json.toString().getBytes(StandardCharsets.UTF_8);
             return PREFIX + Base64.encodeToString(raw, Base64.NO_WRAP | Base64.URL_SAFE);
@@ -139,6 +141,27 @@ public class SettingsQrCodec {
         return null;
     }
 
+    /** 「不推送 WiFi」名单：就是一串 WiFi 名称，原样编成数组 */
+    private static org.json.JSONArray encodeWifiBlock(Context ctx) {
+        org.json.JSONArray arr = new org.json.JSONArray();
+        for (String ssid : BeaconPrefs.getWifiBlockList(ctx)) {
+            arr.put(ssid);
+        }
+        return arr;
+    }
+
+    /** 码里的名单整包覆盖本机（和时间段等设置项同一种语义：以码为准） */
+    private static void applyWifiBlock(Context ctx, org.json.JSONArray arr) {
+        if (arr == null) return;
+        java.util.List<String> list = new java.util.ArrayList<>();
+        for (int i = 0; i < arr.length(); i++) {
+            String ssid = arr.optString(i, "").trim();
+            if (ssid.isEmpty()) continue;
+            list.add(ssid);
+        }
+        BeaconPrefs.setWifiBlockList(ctx, list);
+    }
+
     /**
      * 时间段分组编成数组：n 名称 / d 星期 / r 时间段 / c 归属娃的名字。
      *
@@ -213,6 +236,7 @@ public class SettingsQrCodec {
             if (json.has("nm")) BeaconPrefs.setNearMeters(ctx, json.optInt("nm", 5));
             if (json.has("vs")) BeaconPrefs.setVibrateNearSec(ctx, json.optInt("vs", 5));
             if (json.has("ft")) BeaconPrefs.setFrontTipMeters(ctx, json.optInt("ft", 10));
+            if (json.has("wb")) applyWifiBlock(ctx, json.optJSONArray("wb"));
 
             return true;
         } catch (Exception e) {

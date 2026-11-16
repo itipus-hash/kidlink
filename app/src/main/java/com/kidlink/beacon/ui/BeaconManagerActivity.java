@@ -466,6 +466,14 @@ public class BeaconManagerActivity extends AppCompatActivity {
             childNames.put(c.getId(), c.displayName());
         }
         List<BeaconEntity> all = dbHelper.getAllBeacons();
+        // 调试版把每颗信标的 MAC 打一行：TLM 没有身份信息，只能靠 MAC 认亲，
+        // 「显示未开 TLM」时第一件事就是确认库里存的 MAC 和空口上的是不是同一个
+        if (com.kidlink.beacon.BuildConfig.DEBUG) {
+            for (BeaconEntity b : all) {
+                android.util.Log.d("BeaconManager", "beacon " + b.getId() + " 「" + b.getName()
+                        + "」 mac=" + (b.hasMac() ? b.getMac() : "(空)"));
+            }
+        }
 
         // 重建会导致滚动位置回到顶部，先记下来，重建后补回去
         final int scrollY = scrollGroups == null ? 0 : scrollGroups.getScrollY();
@@ -503,6 +511,9 @@ public class BeaconManagerActivity extends AppCompatActivity {
         if (liveScanner != null && liveScanner.isScanning()) {
             startLiveScan();
         }
+        // 信标增删之后，电量那边「MAC → 信标」的缓存要作废，否则新加的那颗
+        // 会一直沿用旧答案（上次查不到）显示「未开 TLM」
+        com.kidlink.beacon.data.BatteryStore.invalidate();
         refreshLiveCards();
     }
 
@@ -1016,6 +1027,40 @@ public class BeaconManagerActivity extends AppCompatActivity {
                         + (b.hasMac() ? b.getMac() : getString(R.string.info_mac_short_none)),
                 true);
 
+        // 电量放在「上次推送」上面：这页主要就回答两件事 —— 东西在不在、还能撑多久。
+        // 三档颜色：充足用默认字色、一般橙色、偏低和没有 TLM 都是红色
+        // （别用绿色，绿色在这页代表「已连接」，会和实时状态混淆）
+        com.kidlink.beacon.data.BatteryStore.Reading battery =
+                com.kidlink.beacon.data.BatteryStore.get(this, b);
+        String batteryText;
+        int batteryColor;
+        if (battery == null || (battery.mv <= 0 && battery.pct < 0)) {
+            // 广播里没有 TLM 帧 —— 如实说，不编一个百分比出来，也不给「刷新」按钮
+            batteryText = getString(R.string.battery_none,
+                    com.kidlink.beacon.data.BeaconBrand.recommendedTlmIntervalMs(b));
+            batteryColor = R.color.danger;
+        } else {
+            // 三档一律用 levelColor()，保证和卡片左上角图标同色
+            batteryColor = levelColor(battery.level());
+            if (battery.mv <= 0) {
+                batteryText = getString(R.string.battery_pct_fmt,
+                        battery.pct, batteryAge(battery.at));
+            } else if (battery.level() == com.kidlink.beacon.data.BatteryStore.LEVEL_LOW) {
+                batteryText = getString(R.string.battery_low_fmt, formatVolts(battery.mv));
+            } else if (battery.level() == com.kidlink.beacon.data.BatteryStore.LEVEL_MID) {
+                batteryText = getString(R.string.battery_mid_fmt,
+                        formatVolts(battery.mv), batteryAge(battery.at));
+            } else {
+                batteryText = getString(R.string.battery_ok_fmt,
+                        formatVolts(battery.mv), batteryAge(battery.at));
+            }
+        }
+        final LinearLayout batteryRow = addInlineRow(box, R.string.info_battery,
+                batteryText, batteryColor);
+        // 故意不给它加点击：「连上去读一次」读不到真电压（0x2A19 恒返回 100%），
+        // 还会打断信标自己的广播。没读数就是这颗信标没开 TLM，如实写出来就行。
+        batteryRow.setClickable(false);
+
         // 「上次推送」取两种推送里更近的那一次（按娃记的冷却）
         long last = Math.max(BeaconPrefs.getLastPushAtByChild(this, b.getChildId()),
                 BeaconPrefs.getLastApproachAtByChild(this, b.getChildId()));
@@ -1177,6 +1222,15 @@ public class BeaconManagerActivity extends AppCompatActivity {
 
     /** 一行信息：上面一句灰色小标签，下面一行可长按复制的值 */
     private void addInfoRow(LinearLayout parent, int labelRes, String value, boolean mono) {
+        addInfoRow(parent, labelRes, value, mono, R.color.text_primary);
+    }
+
+    /**
+     * 同上，但值可以指定颜色 —— 电量偏低 / 没开 TLM 用红色，
+     * 正常电量保持默认字色。
+     */
+    private void addInfoRow(LinearLayout parent, int labelRes, String value, boolean mono,
+                            int valueColorRes) {
         TextView label = new TextView(this);
         label.setText(labelRes);
         label.setTextSize(12);
@@ -1189,11 +1243,80 @@ public class BeaconManagerActivity extends AppCompatActivity {
         TextView tv = new TextView(this);
         tv.setText(value);
         tv.setTextSize(14);
-        tv.setTextColor(ContextCompat.getColor(this, R.color.text_primary));
+        tv.setTextColor(ContextCompat.getColor(this, valueColorRes));
         tv.setTextIsSelectable(true);
         if (mono) tv.setTypeface(android.graphics.Typeface.MONOSPACE);
         parent.addView(tv, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+    }
+
+    /**
+     * 一行到底的信息：左边灰色小标签，右边值，同一行不换行。
+     *
+     * 电量用它 —— 「电量 2.98 V · 充足（约 3 小时前读取）」读起来是一句话，
+     * 拆成上下两行反而要多扫两次视线；UUID、三件套那些长值仍然用两行式。
+     */
+    private LinearLayout addInlineRow(LinearLayout parent, int labelRes, String value,
+                                      int valueColorRes) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(android.view.Gravity.CENTER_VERTICAL);
+        LinearLayout.LayoutParams lpRow = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        lpRow.topMargin = dp(10);
+
+        TextView label = new TextView(this);
+        // 标签后面直接带冒号：「电量：3.07 V · 充足」。冒号自己就占了一点右侧空白，
+        // 所以下面 value 的左边距从 12dp 收到 6dp，整体看起来才不是「冒号 空格 值」
+        label.setText(getString(labelRes) + "：");
+        label.setTextSize(12);
+        label.setTextColor(ContextCompat.getColor(this, R.color.text_secondary));
+        row.addView(label);
+
+        TextView valueTv = new TextView(this);
+        valueTv.setText(value);
+        valueTv.setTextSize(14);
+        valueTv.setTextColor(ContextCompat.getColor(this, valueColorRes));
+        valueTv.setSingleLine(true);
+        LinearLayout.LayoutParams lpValue = new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+        lpValue.leftMargin = dp(6);
+        row.addView(valueTv, lpValue);
+
+        parent.addView(row, lpRow);
+        return row;
+    }
+
+    /**
+     * 电量档位对应的字色 —— 和卡片左上角图标**完全同一套**：
+     * 充足绿、一般橙、偏低红。低档的红色和「无 TLM」的红色也是同一个，
+     * 想区分看文字就好（一个写具体伏数，一个写「无 TLM 信息」）。
+     */
+    private int levelColor(int level) {
+        if (level == com.kidlink.beacon.data.BatteryStore.LEVEL_LOW) return R.color.danger;
+        if (level == com.kidlink.beacon.data.BatteryStore.LEVEL_MID) return R.color.warning;
+        return R.color.primary;
+    }
+
+    /**
+     * 毫伏 → 「3.070」这种三位小数的伏数。
+     *
+     * 三位小数不是凑数：TLM 的电压字段精度就是 1 mV，写成两位小数会把
+     * 3070 和 3074 显示成同一个「3.07」，看不出波动。坐标轴上一律用点号，
+     * 避免小数点被本地化成逗号。
+     */
+    private String formatVolts(int mv) {
+        return String.format(java.util.Locale.US, "%.3f", mv / 1000.0);
+    }
+
+    /** 电量读数的年龄：刚刚 / 约 N 分钟前 / 约 N 小时前 / 约 N 天前 */
+    private String batteryAge(long at) {
+        long minutes = Math.max(0, (System.currentTimeMillis() - at) / 60_000L);
+        if (minutes < 1) return getString(R.string.battery_age_just_now);
+        if (minutes < 60) return getString(R.string.battery_age_min_fmt, (int) minutes);
+        long hours = minutes / 60;
+        if (hours < 24) return getString(R.string.battery_age_hour_fmt, (int) hours);
+        return getString(R.string.battery_age_day_fmt, (int) (hours / 24));
     }
 
     /** 剩余冷却：不到 1 小时说分钟，超过说小时 */
@@ -1315,6 +1438,12 @@ public class BeaconManagerActivity extends AppCompatActivity {
             final ImageView ivDrag;
             final TextView txtName;
             final TextView txtTag;
+            /** 左上角电量图标：有 TLM 才出，不写数值 */
+            final ImageView ivBattery;
+            /** 上次画出来的电量档位，避免每秒一格都把图标重设一遍 */
+            int batteryState = -1;
+            /** 当前绑定的信标，applyLive 里要用它查信号 */
+            BeaconEntity beacon;
 
             /** 这张卡片现在代表哪颗信标（回收复用会换人） */
             long beaconId = -1;
@@ -1338,6 +1467,7 @@ public class BeaconManagerActivity extends AppCompatActivity {
                 ivDrag = itemView.findViewById(R.id.iv_drag);
                 txtName = itemView.findViewById(R.id.txt_name);
                 txtTag = itemView.findViewById(R.id.txt_tag);
+                ivBattery = itemView.findViewById(R.id.iv_battery);
             }
 
             void bind(BeaconEntity b) {
@@ -1352,6 +1482,8 @@ public class BeaconManagerActivity extends AppCompatActivity {
 
                 // 第二行原来是场景标签，标签去掉了之后改放实时状态：连上就是绿的信号 + 距离
                 beaconId = b.getId();
+                beacon = b;
+                batteryState = -1;   // 视图可能被回收过，电量图标要按新主人重画
                 bound.put(beaconId, this);
                 applyLive(System.currentTimeMillis());
 
@@ -1362,6 +1494,48 @@ public class BeaconManagerActivity extends AppCompatActivity {
             void unbind() {
                 if (beaconId > 0) bound.remove(beaconId);
                 beaconId = -1;
+                beacon = null;
+                batteryState = -1;
+            }
+
+            /**
+             * 左上角电量图标。三档：
+             * 1. ≥ 3.00 V → 绿色满格
+             * 2. 2.90–2.99 V → 橙色半格
+             * 3. 低于 2.90 V → 红色只剩一格
+             * 从没读到过（这颗没开 TLM）→ 整块藏起来。
+             *
+             * 卡片上**不写数字**：数值去详情里看，这里留给信号和距离。
+             */
+            private void applyBattery() {
+                if (beacon == null || ivBattery == null) return;
+                com.kidlink.beacon.data.BatteryStore.Reading r =
+                        com.kidlink.beacon.data.BatteryStore.get(
+                                BeaconManagerActivity.this, beacon);
+                final int state = r == null ? 0 : r.level();
+                if (state == batteryState) return;
+                batteryState = state;
+
+                if (state == 0) {
+                    ivBattery.setVisibility(View.GONE);
+                    return;
+                }
+                final int iconRes;
+                final int colorRes;
+                if (state == com.kidlink.beacon.data.BatteryStore.LEVEL_FULL) {
+                    iconRes = R.drawable.ic_battery_ok;
+                    colorRes = R.color.primary;
+                } else if (state == com.kidlink.beacon.data.BatteryStore.LEVEL_MID) {
+                    iconRes = R.drawable.ic_battery_half;
+                    colorRes = R.color.warning;
+                } else {
+                    iconRes = R.drawable.ic_battery_low;
+                    colorRes = R.color.danger;
+                }
+                ivBattery.setVisibility(View.VISIBLE);
+                ivBattery.setImageResource(iconRes);
+                ivBattery.setColorFilter(ContextCompat.getColor(
+                        BeaconManagerActivity.this, colorRes));
             }
 
             /**
@@ -1379,6 +1553,8 @@ public class BeaconManagerActivity extends AppCompatActivity {
              */
             void applyLive(long now) {
                 if (beaconId <= 0) return;
+                // 电量跟着这一秒的刷新一起走：TLM 什么时候来，图标什么时候变
+                applyBattery();
                 Live live = liveById.get(beaconId);
 
                 if (live == null || now - live.at > LIVE_GRAY_MS) {

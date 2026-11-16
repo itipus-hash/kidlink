@@ -70,6 +70,24 @@
                 android:textColor="@color/text_secondary" />
         </LinearLayout>
 
+        <!--
+          左上角电量：只出一个很小的电池图标（绿=充足 / 橙=一般 / 红=偏低），
+          **不写数字**——数值在详情里看，卡片上留给信号和距离。
+          没收到 TLM 就整块藏起来（那是设备能力，不是故障）。
+          右上角是拖拽手柄，两者不打架。
+        -->
+        <ImageView
+            android:id="@+id/iv_battery"
+            android:layout_width="19dp"
+            android:layout_height="11dp"
+            android:layout_gravity="top|start"
+            android:layout_marginStart="9dp"
+            android:layout_marginTop="8dp"
+            android:src="@drawable/ic_battery_ok"
+            android:contentDescription="@string/info_battery"
+            android:scaleType="fitCenter"
+            android:visibility="gone" />
+
         <ImageView
             android:id="@+id/iv_drag"
             android:layout_width="26dp"

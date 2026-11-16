@@ -16,7 +16,13 @@ import java.util.List;
 public class BeaconDbHelper extends SQLiteOpenHelper {
 
     private static final String DB_NAME = "kidlink_beacon.db";
-    private static final int DB_VERSION = 4;
+    /**
+     * 库版本。8/9 曾经加过 company_id / company_ids 两列用于品牌判断，
+     * 后来改成只看 UUID 前缀（见 BeaconBrand），那两列不再读写；
+     * 已经升级过的设备上列还留着，无害，所以版本号**不能往回调**
+     * （SQLiteOpenHelper 遇到降级会直接抛异常）。
+     */
+    private static final int DB_VERSION = 9;
 
     /** 新信标的默认名字，和 strings.xml 里的 beacon_default_name 保持一致 */
     private static final String DEFAULT_BEACON_NAME = "书包";
@@ -48,6 +54,17 @@ public class BeaconDbHelper extends SQLiteOpenHelper {
      * 「接到许小鱼」和「接到许小鱼(奥数)」。留空表示不限场景。
      */
     public static final String COL_LABEL = "label";
+    /** 最近一次 TLM 读到的电池电压（mV），0 = 没读到（没开 TLM） */
+    public static final String COL_BATTERY_MV = "battery_mv";
+    /** 上面这个读数写入的时间戳（毫秒），0 = 没有 */
+    public static final String COL_BATTERY_AT = "battery_at";
+    /**
+     * 连上去读到的电量百分比（0–100），-1 = 没这个读数。
+     *
+     * 和 {@link #COL_BATTERY_MV} 是两个来源：mV 来自 Eddystone-TLM 广播，
+     * 百分比来自 GATT（0x2A19）。这批 DA14531 信标压根不发 TLM，只有后者能读到。
+     */
+    public static final String COL_BATTERY_PCT = "battery_pct";
 
     /** children 表自己的列名，避免和 beacons 的同名列混在一起读 */
     public static final String COL_CHILD_NAME = "child_name";
@@ -67,7 +84,10 @@ public class BeaconDbHelper extends SQLiteOpenHelper {
             COL_MAC + " TEXT DEFAULT '', " +
             COL_QR_CONTENT + " TEXT DEFAULT '', " +
             COL_CHILD_ID + " INTEGER DEFAULT 0, " +
-            COL_LABEL + " TEXT DEFAULT '')";
+            COL_LABEL + " TEXT DEFAULT '', " +
+            COL_BATTERY_MV + " INTEGER DEFAULT 0, " +
+            COL_BATTERY_AT + " INTEGER DEFAULT 0, " +
+            COL_BATTERY_PCT + " INTEGER DEFAULT -1)";
 
     private static final String CREATE_CHILDREN =
             "CREATE TABLE IF NOT EXISTS " + TABLE_CHILDREN + " (" +
@@ -122,6 +142,36 @@ public class BeaconDbHelper extends SQLiteOpenHelper {
             // 这里**不**建娃：用户可能有两个娃，自动拆或自动并都可能猜错。
             // 归属交给 ensureChildren() 在首页第一次加载时按「一个娃都没有 → 全部并进
             // 第一个信标名」的规则补上，之后用户可以在信标信息里改。
+        }
+        if (oldVersion < 5) {
+            // 5：TLM 电量（Eddystone 遥测）。读不到就一直是 0，界面按「没开 TLM」显示
+            try {
+                db.execSQL("ALTER TABLE " + TABLE_BEACONS + " ADD COLUMN " +
+                        COL_BATTERY_MV + " INTEGER DEFAULT 0");
+            } catch (Exception ignored) {}
+            try {
+                db.execSQL("ALTER TABLE " + TABLE_BEACONS + " ADD COLUMN " +
+                        COL_BATTERY_AT + " INTEGER DEFAULT 0");
+            } catch (Exception ignored) {}
+        }
+        if (oldVersion < 6) {
+            // 6：GATT 读到的电量百分比。这批信标（DA14531）广播里没有 TLM，
+            // 只能连上去读 0x2A19，读一次存下来，重启 App 后卡片上还能看到
+            try {
+                db.execSQL("ALTER TABLE " + TABLE_BEACONS + " ADD COLUMN " +
+                        COL_BATTERY_PCT + " INTEGER DEFAULT -1");
+            } catch (Exception ignored) {}
+        }
+        if (oldVersion < 7) {
+            // 7：把之前存的假百分比全部清掉。
+            //
+            // 那些 100% 来自标准 Battery Level（0x2A19），实测两颗信标都恒返回
+            // 64 = 100%，连用了很久的旧电池也一样，根本没有参考价值。
+            // 真电压改从 Eddystone-TLM 读（见 TlmParser / BatteryStore），
+            // 留着假百分比只会在界面上跟真电压打架。
+            try {
+                db.execSQL("UPDATE " + TABLE_BEACONS + " SET " + COL_BATTERY_PCT + " = -1");
+            } catch (Exception ignored) {}
         }
     }
 
@@ -313,6 +363,51 @@ public class BeaconDbHelper extends SQLiteOpenHelper {
                 COL_ID + " = ?", new String[]{String.valueOf(beaconId)});
     }
 
+    /** 按蓝牙地址找信标 id；找不到返回 0。TLM 帧里没有三件套，只能靠 MAC 认亲 */
+    public long findIdByMac(String mac) {
+        String m = mac == null ? "" : mac.trim().toUpperCase();
+        if (m.isEmpty()) return 0;
+        Cursor cursor = null;
+        try {
+            cursor = getReadableDatabase().query(TABLE_BEACONS, new String[]{COL_ID},
+                    COL_MAC + " = ?", new String[]{m}, null, null, null, "1");
+            if (cursor != null && cursor.moveToFirst()) return cursor.getLong(0);
+        } catch (Exception ignored) {
+        } finally {
+            if (cursor != null) cursor.close();
+        }
+        return 0;
+    }
+
+    /** 只写电量两列，不动这颗信标的别的字段 */
+    public void saveBattery(long beaconId, int mv, long at) {
+        if (beaconId <= 0) return;
+        ContentValues cv = new ContentValues();
+        cv.put(COL_BATTERY_MV, Math.max(0, mv));
+        cv.put(COL_BATTERY_AT, Math.max(0, at));
+        // 有了真实电压就把之前 GATT 读到的百分比清掉。
+        // 那颗标准 Battery Level（2A19）两颗信标都恒返回 64 = 100%，
+        // 连用了很久的旧电池也是 100%，纯属假数据，留着只会在界面上跟真电压打架。
+        cv.put(COL_BATTERY_PCT, -1);
+        getWritableDatabase().update(TABLE_BEACONS, cv,
+                COL_ID + " = ?", new String[]{String.valueOf(beaconId)});
+    }
+
+    /**
+     * 存一次 GATT 读到的电量百分比。
+     *
+     * 这类读数来自「用户主动连上去读」，次数很少但很有价值：信标广播里没有 TLM，
+     * 不落库的话每次重启 App 卡片上又变成「没读数」。
+     */
+    public void saveBatteryPct(long beaconId, int pct, long at) {
+        if (beaconId <= 0) return;
+        ContentValues cv = new ContentValues();
+        cv.put(COL_BATTERY_PCT, Math.max(-1, Math.min(100, pct)));
+        cv.put(COL_BATTERY_AT, Math.max(0, at));
+        getWritableDatabase().update(TABLE_BEACONS, cv,
+                COL_ID + " = ?", new String[]{String.valueOf(beaconId)});
+    }
+
     /**
      * 把所有还没归属的信标一并挂到某个娃下面。
      *
@@ -479,6 +574,9 @@ public class BeaconDbHelper extends SQLiteOpenHelper {
         cv.put(COL_QR_CONTENT, beacon.getQrContent());
         cv.put(COL_CHILD_ID, beacon.getChildId());
         cv.put(COL_LABEL, beacon.getLabel());
+        // 电量三列故意**不**在这里写：读数只由 saveBattery / saveBatteryPct 写入。
+        // 否则任何一次 updateBeacon（改名、挪组、拖动排序）都会拿着内存里的旧实体
+        // 把刚读到的电量覆盖回去 —— 实测就这么把一颗信标的 100% 冲成了「没读数」。
         return cv;
     }
 
@@ -504,6 +602,12 @@ public class BeaconDbHelper extends SQLiteOpenHelper {
         beacon.setChildId(idxChild >= 0 ? cursor.getLong(idxChild) : 0L);
         int idxLabel = cursor.getColumnIndex(COL_LABEL);
         beacon.setLabel(idxLabel >= 0 ? cursor.getString(idxLabel) : "");
+        int idxBatMv = cursor.getColumnIndex(COL_BATTERY_MV);
+        beacon.setBatteryMv(idxBatMv >= 0 ? cursor.getInt(idxBatMv) : 0);
+        int idxBatAt = cursor.getColumnIndex(COL_BATTERY_AT);
+        beacon.setBatteryAt(idxBatAt >= 0 ? cursor.getLong(idxBatAt) : 0L);
+        int idxBatPct = cursor.getColumnIndex(COL_BATTERY_PCT);
+        beacon.setBatteryPct(idxBatPct >= 0 ? cursor.getInt(idxBatPct) : -1);
         return beacon;
     }
 }

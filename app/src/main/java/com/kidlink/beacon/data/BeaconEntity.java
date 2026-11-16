@@ -21,6 +21,17 @@ public class BeaconEntity {
     private long childId;
     /** 场景标签，比如「奥数」：同一个娃的不同包靠它区分，留空表示不限场景 */
     private String label;
+    /** 最近一次从 TLM 读到的电池电压（mV）；0 = 还没读到过（多半是没开 TLM） */
+    private int batteryMv;
+    /** 上面这个读数是什么时候写下来的（毫秒时间戳），0 = 没有 */
+    private long batteryAt;
+    /**
+     * 连上去读到的电量百分比（0–100），-1 = 没有。
+     *
+     * 和 batteryMv 是两个来源：mV 来自广播里的 Eddystone-TLM（这批信标不发），
+     * 百分比来自 GATT 标准电池服务，靠用户点「电量」那一行读一次。
+     */
+    private int batteryPct = -1;
 
     // 默认值
     public static final int DEFAULT_RSSI_1M = -59;
@@ -81,6 +92,27 @@ public class BeaconEntity {
     public void setLabel(String label) { this.label = label == null ? "" : label.trim(); }
 
     public boolean hasLabel() { return !getLabel().isEmpty(); }
+
+    // === 电量（来自 Eddystone-TLM，读不到就是 0） ===
+
+    public int getBatteryMv() { return batteryMv; }
+    public void setBatteryMv(int batteryMv) { this.batteryMv = Math.max(0, batteryMv); }
+
+    public long getBatteryAt() { return batteryAt; }
+    public void setBatteryAt(long batteryAt) { this.batteryAt = Math.max(0, batteryAt); }
+
+    /** 有没有读到过电量 —— 没有就说明这颗信标没开 TLM */
+    public boolean hasBattery() { return batteryMv > 0 && batteryAt > 0; }
+
+    public int getBatteryPct() { return batteryPct; }
+    public void setBatteryPct(int batteryPct) {
+        this.batteryPct = (batteryPct < 0 || batteryPct > 100) ? -1 : batteryPct;
+    }
+
+    /** 有没有任一来源的电量读数（TLM 电压或 GATT 百分比） */
+    public boolean hasAnyBattery() {
+        return (batteryPct >= 0 || batteryMv > 0) && batteryAt > 0;
+    }
 
     /**
      * 获取 UUID 的无横线小写形式，用于 BLE 扫描匹配

@@ -1,6 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <menu xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto">
+    <!--
+        这里故意没有「读取电量」那一项：
+        电量走 Eddystone-TLM 自动广播，扫到就有、扫不到就是这颗信标没开 TLM。
+        再放一个「连上去读一次」的按钮既读不到真电压（标准 0x2A19 恒返回 100%），
+        还会打断它自己的广播，纯属帮倒忙。
+    -->
     <item
         android:id="@+id/action_share_all"
         android:icon="@drawable/ic_share"
