@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+.venv/
+# 运行期生成：按 MAC 记的字节序缓存、状态文件
+tlm_endian.json
+*_status.json
