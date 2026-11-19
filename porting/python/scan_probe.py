@@ -11,6 +11,12 @@
     python3 scan_probe.py --watch --status /tmp/kidlink_status.json \
         --webhook https://your-n8n/webhook/kidlink-home
 
+盯哪颗信标（三选一，越靠前越准）：
+
+    --qr-file ~/kidlink_beacon.txt      # 手机上「分享此信标」→ 复制文本存成文件（推荐）
+    --qr 'KIDLINK:v1:eyJuIjoi...'       # 直接粘在命令行
+    --mac 48:87:2D:9E:6D:FB             # 手工指定
+
 用的是 bleak（CoreBluetooth），首次运行要授权蓝牙：
     系统设置 → 隐私与安全性 → 蓝牙 → 允许承载脚本的那个解释器 / 终端
 换 venv、换 Python 版本都要重新授权 —— 「昨天还好今天收不到」基本都是这个原因。
@@ -38,8 +44,41 @@ from kidlink_proto import (
     parse_ibeacon,
     parse_tlm,
 )
+from kidlink_qr import BeaconConfig, decode_or_explain
 
 BUCKETS = [-100, -90, -80, -70, -60, -50, -40]
+
+
+class BeaconFilter(object):
+    """只盯一颗信标。优先按二维码里的 MAC 认，老码没有 MAC 就靠三件套认——
+
+    注意 TLM 帧里没有 UUID，只能靠 MAC 关联，所以「靠三件套认」要多一步：
+    先在 iBeacon 帧上认出 MAC，之后这台 MAC 的 TLM 帧才放行。
+    """
+
+    def __init__(self, cfg=None, mac=""):
+        self.cfg = cfg
+        self.mac = (mac or (cfg.mac if cfg else "")).strip().upper()
+        self.learned = set()
+
+    def allow(self, mac, ib):
+        if self.mac:
+            return mac == self.mac
+        if self.cfg is None:
+            return True
+        if ib is not None and self.cfg.matches(ib):
+            self.learned.add(mac)
+            return True
+        return mac in self.learned
+
+    def describe(self):
+        if self.cfg is not None:
+            tail = "MAC {}".format(self.mac) if self.mac else "无 MAC，靠三件套 {} {}/{}".format(
+                self.cfg.uuid_formatted, self.cfg.major, self.cfg.minor)
+            return "盯信标「{}」  {}".format(self.cfg.name, tail)
+        if self.mac:
+            return "盯信标 MAC {}".format(self.mac)
+        return "没指定信标（全部显示）"
 
 
 class MacStat(object):
@@ -74,6 +113,8 @@ def build_parser():
     p.add_argument("--minutes", type=float, default=0, help="跑多少分钟统计（0 = 不按时间停）")
     p.add_argument("--watch", action="store_true", help="常驻模式：做判定、写状态、回调 webhook")
     p.add_argument("--mac", default="", help="只盯这颗信标（大写，冒号分隔）")
+    p.add_argument("--qr", default="", help="手机分享出来的信标二维码文本（KIDLINK:v1:...）")
+    p.add_argument("--qr-file", default="", help="同上，从文件读（粘贴到 txt 再传过来最省事）")
     p.add_argument("--status", default="/tmp/kidlink_status.json", help="状态文件路径")
     p.add_argument("--webhook", default="", help="状态翻转时 POST 的地址（n8n / HA 都行）")
     p.add_argument("--endian-file", default="tlm_endian.json", help="字节序缓存文件")
@@ -90,7 +131,26 @@ async def run(args):
     stats = {}
     trackers = {}
     endian = EndianStore(args.endian_file)
-    only = args.mac.strip().upper()
+
+    # 信标来源优先级：--qr / --qr-file（手机上「分享此信标」得到的码）> --mac > 不过滤
+    qr_text = (args.qr or "").strip()
+    if not qr_text and args.qr_file:
+        try:
+            with open(args.qr_file, "r", encoding="utf-8") as f:
+                qr_text = f.read().strip()
+        except IOError as e:
+            sys.exit("读二维码文件失败: {}".format(e))
+    cfg = None
+    if qr_text:
+        cfg, err = decode_or_explain(qr_text)
+        if cfg is None:
+            sys.exit("二维码解析失败: " + err)
+    flt = BeaconFilter(cfg, args.mac)
+    print(flt.describe())
+    if cfg is not None:
+        print("  UUID {}  {}/{}  1米RSSI {}".format(
+            cfg.uuid_formatted, cfg.major, cfg.minor, cfg.rssi_1m))
+
     started = time.time()
     deadline = started + args.minutes * 60 if args.minutes > 0 else None
     last_report = started
@@ -127,6 +187,9 @@ async def run(args):
         mac = (device.address or "").upper()
         if not mac:
             return
+        ib = parse_ibeacon(adv.manufacturer_data)
+        if not flt.allow(mac, ib):
+            return
         st = stats.get(mac)
         if st is None:
             st = MacStat(mac)
@@ -136,7 +199,6 @@ async def run(args):
         if adv.rssi:
             st.rssi.append(adv.rssi)
 
-        ib = parse_ibeacon(adv.manufacturer_data)
         if ib:
             st.beacon = ib
 
@@ -148,8 +210,6 @@ async def run(args):
                     now_str(), mac, "LE" if tlm.little_endian else "BE"))
 
         if not args.watch:
-            return
-        if only and mac != only:
             return
 
         tr = trackers.get(mac)
@@ -172,8 +232,6 @@ async def run(args):
 
     def report(prefix=""):
         rows = sorted(stats.values(), key=lambda s: -s.frames)
-        if only:
-            rows = [r for r in rows if r.mac == only]
         if not rows:
             print("{}还没收到任何广播".format(prefix))
             return

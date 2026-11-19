@@ -18,6 +18,13 @@ from kidlink_proto import (
     parse_tlm_payload,
     recommended_tlm_interval_ms,
 )
+from kidlink_qr import (
+    BeaconConfig,
+    classify,
+    decode,
+    decode_or_explain,
+    encode,
+)
 
 # 真机原始帧：电压 03 0C、温度 1D 00、计数 E5 06 00 00、运行 1C 05 00 00
 # （末尾 00 05 00 06 C7 是厂商追加的 major/minor/tx，解析时忽略）
@@ -195,6 +202,76 @@ class TestPresence(unittest.TestCase):
         for i in range(5):
             self.assertIsNone(p.feed(-80, now=10.0 + i * 2.0))
         self.assertEqual(p.state, "home")
+
+
+class TestQrCodec(unittest.TestCase):
+    """信标二维码：手机上「分享此信标」出来的那段 KIDLINK:v1:..."""
+
+    def _cfg(self, mac="48:87:2D:9E:6D:FB"):
+        return BeaconConfig(name="书包", remark="一年级", uuid="E2C56DB5DFFB48D2B060D0F5A0469666",
+                            major=5, minor=6, rssi_1m=-57, mac=mac)
+
+    def test_round_trip(self):
+        cfg = self._cfg()
+        text = encode(cfg)
+        self.assertTrue(text.startswith("KIDLINK:v1:"))
+        back = decode(text)
+        self.assertEqual(back.name, "书包")
+        self.assertEqual(back.remark, "一年级")
+        self.assertEqual(back.uuid, "e2c56db5dffb48d2b060d0f5a0469666")
+        self.assertEqual(back.uuid_formatted, "E2C56DB5-DFFB-48D2-B060-D0F5A0469666")
+        self.assertEqual((back.major, back.minor), (5, 6))
+        self.assertEqual(back.rssi_1m, -57)
+        self.assertEqual(back.mac, "48:87:2D:9E:6D:FB")
+
+    def test_old_code_without_mac(self):
+        """老二维码没有 mc 字段：靠三件套认，不能报错。"""
+        cfg = self._cfg(mac="")
+        back = decode(encode(cfg))
+        self.assertEqual(back.mac, "")
+        self.assertEqual(back.rssi_1m, -57)
+
+    def test_matches_scanned_ibeacon(self):
+        cfg = self._cfg()
+        payload = bytes.fromhex("0215E2C56DB5DFFB48D2B060D0F5A0469666" + "0005" + "0006" + "C7")
+        ib = parse_ibeacon({0x4458: payload})
+        self.assertTrue(cfg.matches(ib))
+        ib.minor = 7
+        self.assertFalse(cfg.matches(ib))
+        self.assertFalse(cfg.matches(None))
+
+    def test_whitespace_and_missing_padding(self):
+        """二维码/聊天软件常带换行，也可能吃掉 '=' 补齐符。"""
+        text = encode(self._cfg())
+        mangled = text.replace("=", "").strip()
+        mangled = mangled[:20] + "\n" + mangled[20:]
+        self.assertIsNotNone(decode(mangled))
+
+    def test_rejects_other_kidlINK_codes(self):
+        """整包码 / 设置码要给出人话提示，不能当成信标码硬解。"""
+        for text, kind, hint in (
+            ("KIDLINK:b1:abcd:1/1:AAAA", "bundle", "整套配置"),
+            ("KIDLINK:cfg1:AAAA", "settings", "设置"),
+            ("https://example.com", "unknown", "接娃助手"),
+            ("", "unknown", "接娃助手"),
+        ):
+            self.assertEqual(classify(text), kind)
+            cfg, err = decode_or_explain(text)
+            self.assertIsNone(cfg)
+            self.assertIn(hint, err)
+
+    def test_rejects_short_uuid(self):
+        import base64 as _b64
+        import json as _json
+        bad = "KIDLINK:v1:" + _b64.b64encode(
+            _json.dumps({"u": "ABCD", "ma": 1, "mi": 2}).encode()).decode()
+        self.assertIsNone(decode(bad))
+        cfg, err = decode_or_explain(bad)
+        self.assertIsNone(cfg)
+        self.assertIn("UUID", err)
+
+    def test_garbage_base64(self):
+        self.assertIsNone(decode("KIDLINK:v1:!!!!not-base64!!!!"))
 
 
 if __name__ == "__main__":
